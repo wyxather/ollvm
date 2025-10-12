@@ -1,0 +1,86 @@
+name: windows-llvm-build
+
+permissions:
+  contents: write
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+
+jobs:
+  build:
+    timeout-minutes: 150
+    runs-on: windows-latest
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - name: Set CORES
+        run: echo "CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
+
+      - name: Checkout Repo
+        uses: actions/checkout@v5
+
+      - name: Install sccache
+        run: choco install sccache -y
+
+      - name: Check Ninja version
+        run: ninja --version
+
+      - name: Check clang-cl version
+        run: clang-cl --version
+
+      - name: Setup MSBuild.exe
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build llvm
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -Bbuild -G Ninja ^
+          -DLLVM_ENABLE_RPMALLOC=OFF ^
+          -DLLVM_TOOL_LLVM_SHLIB_BUILD=OFF ^
+          -DLLVM_INCLUDE_TESTS=OFF ^
+          -DLLVM_INCLUDE_TOOLS=ON ^
+          -DLLVM_INCLUDE_EXAMPLES=OFF ^
+          -DLLDB_ENABLE_PYTHON=OFF ^
+          -DLLVM_ENABLE_LIBXML2=OFF ^
+          -DLLVM_ENABLE_ZLIB=OFF ^
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ^
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+          -DLLVM_OBFUSCATION_LINK_INTO_TOOLS=ON ^
+          -DCMAKE_INSTALL_PREFIX=install ^
+          -DLLVM_TARGETS_TO_BUILD="X86" ^
+          -DLLVM_ENABLE_PROJECTS="clang;lld" ^
+          -DCMAKE_C_COMPILER=clang-cl ^
+          -DCMAKE_CXX_COMPILER=clang-cl ^
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
+          -DCMAKE_CXX_FLAGS="/utf-8" ^
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+          llvm
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target install --verbose -j ${{ env.CORES }}
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-llvm
+          path: install/
+
+      - name: Package llvm
+        run: 7z a windows-llvm.7z .\install\
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}  # if: github.event_name == 'release'
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          name: ${{ github.event.release.name }}
+          draft: false
+          prerelease: false
+          files: windows-llvm.7z
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
