@@ -1,22 +1,25 @@
 
-<h1 align="center">Arkari （请给我点小星星和打钱）</h1>
-<p align="center">
- <a href="https://discord.gg/f5nDYjsrKZ">
+<h1 align="center">KomiMoe/Hikari</h1>
+<h2 align="center">曾用名: Arkari (请给我点小星星和打钱) </h2>
+
+<h3 align="center">
+  <a href="https://discord.gg/f5nDYjsrKZ">Discord群组:
   <img width="180" src="https://discordapp.com/api/guilds/1391744742148145294/widget.png" />
  </a>
-</p>
+</h3>
+
 <p align="center">
- <a href="https://github.com/KomiMoe/Arkari/issues">
-  <img src="https://img.shields.io/github/issues/KomiMoe/Arkari"/> 
+ <a href="https://github.com/KomiMoe/Hikari/issues">
+  <img src="https://img.shields.io/github/issues/KomiMoe/Hikari"/> 
  </a>
- <a href="https://github.com/KomiMoe/Arkari/network/members">
-  <img src="https://img.shields.io/github/forks/KomiMoe/Arkari"/> 
+ <a href="https://github.com/KomiMoe/Hikari/network/members">
+  <img src="https://img.shields.io/github/forks/KomiMoe/Hikari"/> 
  </a>  
- <a href="https://github.com/KomiMoe/Arkari/stargazers">
-  <img src="https://img.shields.io/github/stars/KomiMoe/Arkari"/> 
+ <a href="https://github.com/KomiMoe/Hikari/stargazers">
+  <img src="https://img.shields.io/github/stars/KomiMoe/Hikari"/> 
  </a>
- <a href="https://github.com/KomiMoe/Arkari/LICENSE">
-  <img src="https://img.shields.io/github/license/KomiMoe/Arkari?"/> 
+ <a href="https://github.com/KomiMoe/Hikari/LICENSE">
+  <img src="https://img.shields.io/github/license/KomiMoe/Hikari?"/> 
  </a>
 </p>
 <h3 align="center">Yet another llvm based obfuscator based on goron</h3>
@@ -33,7 +36,7 @@
  - 浮点常量加密(`-mllvm -irobf-cfe`) (Win64-MT-19.1.3-obf1.6.0 or later)
  - Microsoft CXXABI RTTI Name 擦除器 (实验性功能!) [需要指定配置文件路径 以及 配置文件`randomSeed`字段(32字节，不足会在后面补0，超过会截断)] (`-mllvm -irobf-rtti`) (Win64-MT-20.1.7-obf1.7.0 or later)
  - 全部 (`-mllvm -irobf-indbr -mllvm -irobf-icall -mllvm -irobf-indgv -mllvm -irobf-cse -mllvm -irobf-cff -mllvm -irobf-cie -mllvm -irobf-cfe -mllvm -irobf-rtti`)
- - 或直接通过配置文件管理(`-mllvm -arkari-cfg="配置文件路径|Your config path"`) (Win64-MT-20.1.7-obf1.7.0 or later)
+ - 或直接通过配置文件管理(`-mllvm -hikari-cfg="配置文件路径|Your config path"`) (Win64-MT-20.1.7-obf1.7.0 or later)
 
 对比于goron的改进：
  - 由于作者明确表示暂时(至少几万年吧)不会跟进llvm版本和不会继续更新. 所以有了这个版本(https://github.com/amimo/goron/issues/29)
@@ -97,7 +100,7 @@ $ CFLAGS+="-mllvm -irobf -mllvm --irobf-indbr" or CXXFLAGS+="-mllvm -irobf -mllv
 $ ./configure
 $ make
 ```
-对于使用VisualStudio的项目，可以使用VisualStudio插件： https://github.com/KomiMoe/llvm2019
+对于使用Visual Studio的项目，可以使用Visual Studio插件： https://github.com/KomiMoe/llvm2019
 
 
 ## 可以通过**annotate**对特定函数**开启/关闭**指定混淆选项：
@@ -185,7 +188,7 @@ Eg.间接函数调用,并加密目标函数地址,强度设置为3(`-mllvm -irob
 ## 通过配置文件管理混淆参数
 (Win64-MT-20.1.7-obf1.7.0 or later)
 
-编译参数加上：`-mllvm -arkari-cfg="配置文件路径|Your config path"` 
+编译参数加上：`-mllvm -hikari-cfg="配置文件路径|Your config path"` 
 
 路径可以是绝对路径，或者相对于编译器工作目录的相对路径
 
@@ -238,11 +241,11 @@ Thanks to [JetBrains](https://www.jetbrains.com/?from=KomiMoe) for providing fre
 
 ## Star History
 
-<a href="https://www.star-history.com/#KomiMoe/Arkari&Date">
+<a href="https://www.star-history.com/#KomiMoe/Hikari&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=KomiMoe/Arkari&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=KomiMoe/Arkari&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=KomiMoe/Arkari&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=KomiMoe/Hikari&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=KomiMoe/Hikari&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=KomiMoe/Hikari&type=Date" />
  </picture>
 </a>
 
