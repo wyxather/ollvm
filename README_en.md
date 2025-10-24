@@ -1,10 +1,10 @@
 <h1 align="center">KomiMoe/Hikari</h1>
-<h2 align="center">Formerly Known As: Arkari (Please give me stars and donations)</h2>
+<h2 align="center">Formerly Known As: Arkari (Please give me stars and support) </h2>
 
 <h3 align="center">
-  <a href="https://discord.gg/f5nDYjsrKZ">Discord Group:
-  <img width="180" src="https://discordapp.com/api/guilds/1391744742148145294/widget.png" />
- </a>
+  <a href="https://discord.gg/f5nDYjsrKZ">
+    <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord Community" />
+  </a>
 </h3>
 
 <p align="center">
