@@ -1,4 +1,3 @@
-
 <h1 align="center">KomiMoe/Hikari</h1>
 <h2 align="center">曾用名: Arkari (请给我点小星星和打钱) </h2>
 
@@ -20,6 +19,11 @@
  </a>
  <a href="https://github.com/KomiMoe/Hikari/LICENSE">
   <img src="https://img.shields.io/github/license/KomiMoe/Hikari?"/> 
+ </a>
+</p>
+<p align="center">
+ <a href="./README_en.md">
+  <img src="https://img.shields.io/badge/README-English-blue.svg" alt="Read in English"/>
  </a>
 </p>
 <h3 align="center">Yet another llvm based obfuscator based on goron</h3>
