@@ -121,7 +121,7 @@ std::shared_ptr<ObfuscationOptions> ObfuscationOptions::readConfigFile(
       }
     }
     if (!objHit) {
-      llvm::errs() << "warning: unknown arkari config node: "
+      llvm::errs() << "warning: unknown hikari config node: "
         << obj.getFirst().str() << '\n';
     }
   }
