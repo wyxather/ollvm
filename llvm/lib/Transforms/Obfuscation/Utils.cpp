@@ -6,9 +6,11 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/EHPersonalities.h"
 #include "llvm/IR/NoFolder.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/CryptoUtils.h"
 
 #include <random>
+#include <algorithm>
 
 // Shamefully borrowed from ../Scalar/RegToMem.cpp :(
 bool valueEscapes(Instruction *Inst) {
@@ -180,59 +182,39 @@ bool expandConstantExpr(Function &F) {
   return Changed;
 }
 
-void maskCipher(uint8_t mask, uint8_t &lastIndex, APInt &preIndex, unsigned objKey, unsigned newIndex) {
+void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newIndex) {
   switch (mask) {
   case 1:
-    if (lastIndex != 1) {
-      preIndex = -preIndex;
-      lastIndex = 1;
-      break;
-    }
+    preIndex = -preIndex;
+    break;
   case 2:
-    if (lastIndex != 2) {
-      preIndex = preIndex.rotl(objKey + newIndex);
-      lastIndex = 2;
-      break;
-    }
+    preIndex = preIndex.rotl(objKey + newIndex);
+    break;
   case 3:
-    if (lastIndex != 3) {
-      preIndex = preIndex.byteSwap();
-      lastIndex = 3;
-      break;
-    }
+    preIndex = preIndex.byteSwap();
+    break;
   case 4:
-    if (lastIndex != 4) {
-      preIndex = ~preIndex;
-      lastIndex = 4;
-      break;
-    }
+    preIndex = ~preIndex;
+    break;
   case 5:
-    if (lastIndex != 5) {
-      preIndex = preIndex.rotr(objKey - newIndex);
-      lastIndex = 5;
-      break;
-    }
+    preIndex = preIndex.rotr(objKey - newIndex);
+    break;
   default:
-    if (lastIndex == 0) {
-      preIndex = -preIndex;
-      lastIndex = 1;
-      break;
-    }
     preIndex = preIndex ^ objKey;
-    lastIndex = 0;
     break;
   }
 }
 
 void createPageTable(const CreatePageTableArgs &args) {
-  const auto Int32Ty = IntegerType::getInt32Ty(args.M->getContext());
+  auto& Ctx = args.M->getContext();
+  const auto Int32Ty = IntegerType::getInt32Ty(Ctx);
   std::mt19937_64 re(args.RandomEngine->get_uint64_t());
   std::shuffle(args.Objects->begin(), args.Objects->end(), re);
 
   std::vector<Constant *> GVObjects;
   for (unsigned i = 0; i < args.Objects->size(); ++i) {
     auto Obj = args.Objects->at(i);
-    GVObjects.push_back(ConstantExpr::getBitCast(Obj, PointerType::getUnqual(Obj->getType())));
+    GVObjects.push_back(ConstantExpr::getBitCast(Obj, PointerType::getUnqual(Ctx)));
     args.IndexMap->insert_or_assign(Obj, i);
   }
 
@@ -258,10 +240,9 @@ void createPageTable(const CreatePageTableArgs &args) {
       const auto ObjMask = static_cast<uint32_t>(ObjFullKey >> 32);
 
       APInt preIndex(32, args.IndexMap->at(Obj));
-      uint8_t lastIndex = 0xff;
       for (unsigned k = 0; k < 8; ++k) {
         const auto mask = static_cast<uint8_t>(ObjMask >> (k * 3)) % 6u;
-        maskCipher(mask, lastIndex, preIndex, ObjKey, j);
+        maskCipher(mask, preIndex, ObjKey, j);
       }
       auto toWriteData = ConstantInt::get(Int32Ty, preIndex);
       ConstantObjectIndex.push_back(toWriteData);
@@ -300,10 +281,9 @@ void enhancedPageTable(const CreatePageTableArgs &args, std::unordered_map<Const
                            args.IndexMap->at(Obj) :
                            FuncIndexMap->at(Obj));
 
-      uint8_t lastIndex = 0xff;
       for (unsigned k = 0; k < 4 * args.CountLoop; ++k) {
         const auto mask = static_cast<uint8_t>(ObjMask >> (k * 2)) % 6u;
-        maskCipher(mask, lastIndex, preIndex, ObjKey, j);
+        maskCipher(mask, preIndex, ObjKey, j);
       }
       auto toWriteData = ConstantInt::get(Int32Ty, preIndex);
       ConstantObjectIndex.push_back(toWriteData);
@@ -344,6 +324,30 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
   }
 
   auto createDecIndexSwitch = [&IRB, &M](uint8_t mask, Value *NextIndex, Value *PrevIndex, Value* ObjKey) -> Value* {
+
+    // void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newIndex) {
+    //   switch (mask) {
+    //   case 1:
+    //     preIndex = -preIndex;
+    //     break;
+    //   case 2:
+    //     preIndex = preIndex.rotl(objKey + newIndex);
+    //     break;
+    //   case 3:
+    //     preIndex = preIndex.byteSwap();
+    //     break;
+    //   case 4:
+    //     preIndex = ~preIndex;
+    //     break;
+    //   case 5:
+    //     preIndex = preIndex.rotr(objKey - newIndex);
+    //     break;
+    //   default:
+    //     preIndex = preIndex ^ objKey;
+    //     break;
+    //   }
+    // }
+
     switch (mask) {
     case 1:
       // preIndex = -preIndex;
@@ -390,17 +394,8 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
           {Zero, NextIndex});
       NextIndex = IRB.CreateLoad(Int32Ty, GEP);
       std::vector<uint8_t> maskIndex;
-      uint8_t lastIndex = 0xff;
       for (unsigned j = 0; j < 4 * args.FuncLoopCount; ++j) {
         auto mask = static_cast<uint8_t>(FuncMask >> (j * 2)) % 6u;
-        if (mask == lastIndex) {
-          if (mask < 5) {
-            mask++;
-          } else {
-            mask = 0;
-          }
-        }
-        lastIndex = mask;
         maskIndex.push_back(mask);
       }
       for (int j = maskIndex.size() - 1; j >= 0; --j) {
@@ -420,17 +415,8 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
     if (i) {
       NextIndex = IRB.CreateLoad(Int32Ty, GEP);
       std::vector<uint8_t> maskIndex;
-      uint8_t lastIndex = 0xff;
       for (unsigned j = 0; j < 8; ++j) {
         auto mask = static_cast<uint8_t>(ModuleMask >> (j * 3)) % 6u;
-        if (mask == lastIndex) {
-          if (mask < 5) {
-            mask++;
-          } else {
-            mask = 0;
-          }
-        }
-        lastIndex = mask;
         maskIndex.push_back(mask);
       }
       for (int j = maskIndex.size() - 1; j >= 0; --j) {
