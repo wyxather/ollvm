@@ -258,6 +258,16 @@ Thanks to [JetBrains](https://www.jetbrains.com/?from=KomiMoe) for providing fre
 + [Hikari](https://github.com/HikariObfuscator/Hikari)
 + [ollvm](https://github.com/obfuscator-llvm/obfuscator)
 
+## 我会永远视奸你们
+
+我很可爱，请给我打钱：
+
+- **ETH**: `0x24dfF9acA645393411C0dfff75d9166676741C12`
+- **BTC**: `1ma7oumgyPfu5v1sSeHBK71WyhKY9vroB`
+- **USDT(TRC20)**: `TJ5SnHvRmiaoVzWVSZPAuMdsUwEMnLxmLP`
+
+站街售卖自己，白菜价出租自己
+
 ## License
 本项目采用 混合协议 开源，因此使用本项目时，你需要注意以下几点：
 1. 第三方库代码或修改部分遵循其原始开源许可.
