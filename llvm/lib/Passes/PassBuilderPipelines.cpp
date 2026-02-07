@@ -1,4 +1,4 @@
-//===- Construction of pass pipelines -------------------------------------===//
+﻿//===- Construction of pass pipelines -------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -390,6 +390,14 @@ void PassBuilder::invokeOptimizerLastEPCallbacks(ModulePassManager &MPM,
   for (auto &C : OptimizerLastEPCallbacks)
     C(MPM, Level, Phase);
   MPM.addPass(ObfuscationPassManagerPass());
+  FunctionPassManager CleanupFPM;
+  CleanupFPM.addPass(SimplifyCFGPass());
+  CleanupFPM.addPass(InstCombinePass());
+  CleanupFPM.addPass(ADCEPass());
+
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(CleanupFPM)));
+
+  MPM.addPass(GlobalDCEPass());
 }
 void PassBuilder::invokeFullLinkTimeOptimizationEarlyEPCallbacks(
     ModulePassManager &MPM, OptimizationLevel Level) {
