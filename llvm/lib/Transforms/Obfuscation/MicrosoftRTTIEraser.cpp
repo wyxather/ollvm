@@ -9,8 +9,8 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Transforms/Obfuscation/MicrosoftRTTIEraser.h"
 
 #define DEBUG_TYPE "ms_rtti_eraser"
@@ -22,7 +22,7 @@ namespace {
 class MsRttiEraser : public ModulePass {
 protected:
   ObfuscationOptions *ArgsOptions;
-  CryptoUtils         RandomEngine;
+  llvm::BLAKE3        Blake3;
 
 public:
   static char ID;
@@ -87,8 +87,8 @@ public:
     SmallString<512> passwd;
     passwd.append(ArgsOptions->randomSeed());
     passwd.append(rtti);
-    uint8_t hash[32];
-    RandomEngine.sha256(passwd.c_str(), hash);
+    Blake3.update(passwd);
+    const auto hash = Blake3.final();
 
     SmallString<256> result = rtti;
 

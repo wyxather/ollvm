@@ -9,9 +9,9 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 #include "llvm/IR/NoFolder.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 #include <map>
 #include <set>
 #include <iostream>
@@ -28,11 +28,18 @@ struct ConstantFPEncryption : public FunctionPass {
   ObfuscationOptions *ArgsOptions;
 
   std::unordered_map<Function *, std::set<Instruction *>> FunctionModifyIRs;
-
-  CryptoUtils         RandomEngine;
+  std::mt19937_64 RNG;
 
   ConstantFPEncryption(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
+    uint64_t seed = 0;
+    if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+      llvm::report_fatal_error(
+          StringRef("Failed to get random bytes for page table generation") +
+          errorCode.message());
+    }
+
+    RNG = std::mt19937_64(seed);
   }
 
   StringRef getPassName() const override {
@@ -111,7 +118,7 @@ struct ConstantFPEncryption : public FunctionPass {
           auto InsertPoint = PHI ?
                                PHI->getIncomingBlock(i)->getTerminator() :
                                I;
-          auto CipherConstant = encryptConstant(CFP, InsertPoint, &RandomEngine, opt.level());
+          auto CipherConstant = encryptConstant(CFP, InsertPoint, RNG, opt.level());
           if (PHI)
             PHI->setIncomingValue(i, CipherConstant);
           else

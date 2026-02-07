@@ -3,11 +3,11 @@
 #include "llvm/Transforms/Obfuscation/IndirectCall.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 
 #include <random>
 
@@ -28,12 +28,20 @@ struct IndirectCall : public FunctionPass {
   //  Mask=======Key
   std::unordered_map<Constant *, uint64_t> CalleeKeys;
   std::vector<GlobalVariable *> CalleePageTable;
+  std::mt19937_64 RNG;
 
-  CryptoUtils RandomEngine;
   bool RunOnFuncChanged = false;
 
   IndirectCall(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
+    uint64_t seed = 0;
+    if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+      llvm::report_fatal_error(
+          StringRef("Failed to get random bytes for page table generation") +
+          errorCode.message());
+    }
+
+    RNG = std::mt19937_64(seed);
   }
 
   StringRef getPassName() const override { return {"IndirectCall"}; }
@@ -64,7 +72,7 @@ struct IndirectCall : public FunctionPass {
 
             if (CalleeKeys.count(Callee) == 0) {
               Callees.push_back(Callee);
-              CalleeKeys[Callee] = RandomEngine.get_uint64_t();
+              CalleeKeys[Callee] = RNG();
             }
           }
         }
@@ -88,7 +96,7 @@ struct IndirectCall : public FunctionPass {
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
     createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectCallee" ;
-    createPageTableArgs.RandomEngine = &RandomEngine;
+    createPageTableArgs.RNG = &RNG;
     createPageTableArgs.M = &M;
     createPageTableArgs.Objects = &Callees;
     createPageTableArgs.IndexMap = &CalleeIndex;
@@ -121,7 +129,7 @@ struct IndirectCall : public FunctionPass {
     std::unordered_map<Constant *, uint64_t> FuncKeys;
     for (auto callee : FuncCalleesSet) {
       FuncCallees.push_back(callee);
-      FuncKeys[callee] = RandomEngine.get_uint64_t();
+      FuncKeys[callee] = RNG();
     }
 
     std::vector<GlobalVariable *> FuncCalleePageTable;
@@ -131,7 +139,7 @@ struct IndirectCall : public FunctionPass {
       CreatePageTableArgs createPageTableArgs;
       createPageTableArgs.CountLoop = opt.level();
       createPageTableArgs.GVNamePrefix = M.getName().str() + Fn.getName().str() + "_IndirectCallee" ;
-      createPageTableArgs.RandomEngine = &RandomEngine;
+      createPageTableArgs.RNG = &RNG;
       createPageTableArgs.M = &M;
       createPageTableArgs.Objects = &FuncCallees;
       createPageTableArgs.IndexMap = &CalleeIndex;

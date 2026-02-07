@@ -4,10 +4,10 @@
 #include "llvm/Transforms/Obfuscation/IndirectBranch.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 
 #include <random>
 
@@ -26,12 +26,20 @@ struct IndirectBranch : public FunctionPass {
   std::unordered_map<Constant *, unsigned> BBIndex;
   std::unordered_map<Constant *, uint64_t> BBKeys;
   std::vector<GlobalVariable *> BBPageTable;
+  std::mt19937_64 RNG;
 
-  CryptoUtils RandomEngine;
   bool RunOnFuncChanged = false;
 
   IndirectBranch(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
+    uint64_t seed = 0;
+    if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+      llvm::report_fatal_error(
+          StringRef("Failed to get random bytes for page table generation") +
+          errorCode.message());
+    }
+
+    RNG = std::mt19937_64(seed);
   }
 
   StringRef getPassName() const override { return {"IndirectBranch"}; }
@@ -44,7 +52,15 @@ struct IndirectBranch : public FunctionPass {
         continue;
       }
       SplitAllCriticalEdges(F, CriticalEdgeSplittingOptions(nullptr, nullptr));
-      uint64_t BBKey = RandomEngine.get_uint64_t();
+      uint64_t seed = 0;
+      if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+        llvm::report_fatal_error(
+            StringRef("Failed to get random bytes for page table generation") +
+            errorCode.message());
+      }
+
+      const uint64_t BBKey = RNG();
+
       for (auto &BB : F) {
         if (auto *BI = dyn_cast<BranchInst>(BB.getTerminator())) {
           if (BI->isConditional()) {
@@ -81,7 +97,7 @@ struct IndirectBranch : public FunctionPass {
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
     createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectBr" ;
-    createPageTableArgs.RandomEngine = &RandomEngine;
+    createPageTableArgs.RNG = &RNG;
     createPageTableArgs.M = &M;
     createPageTableArgs.Objects = &BBAddrTargets;
     createPageTableArgs.IndexMap = &BBIndex;
@@ -114,7 +130,7 @@ struct IndirectBranch : public FunctionPass {
 
     std::vector<Constant *> FuncBBs;
     std::unordered_map<Constant *, uint64_t> FuncKeys;
-    auto FuncKey = RandomEngine.get_uint64_t();
+    auto FuncKey = RNG();
 
     for (auto bb : FuncBBsSet) {
       FuncBBs.push_back(bb);
@@ -128,8 +144,8 @@ struct IndirectBranch : public FunctionPass {
       CreatePageTableArgs createPageTableArgs;
       createPageTableArgs.CountLoop = opt.level();
       createPageTableArgs.GVNamePrefix = M.getName().str() + Fn.getName().str() + "_IndirectBr" ;
-      createPageTableArgs.RandomEngine = &RandomEngine;
       createPageTableArgs.M = &M;
+      createPageTableArgs.RNG = &RNG;
       createPageTableArgs.Objects = &FuncBBs;
       createPageTableArgs.IndexMap = &BBIndex;
       createPageTableArgs.ObjectKeys = &FuncKeys;

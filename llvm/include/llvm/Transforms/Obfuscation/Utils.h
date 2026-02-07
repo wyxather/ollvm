@@ -5,19 +5,16 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Transforms/Utils/Local.h" // For DemoteRegToStack and DemotePHIToStack
 
+#include <random>
 #include <unordered_map>
 #include <set>
 #include <vector>
-
-namespace llvm {
-  class CryptoUtils;
-}
 
 using namespace llvm;
 struct CreatePageTableArgs {
   unsigned CountLoop;
   std::string GVNamePrefix;
-  CryptoUtils* RandomEngine;
+  std::mt19937_64 *RNG;
   Module* M;
   std::vector<Constant *> *Objects;
   std::unordered_map<Constant *, unsigned> *IndexMap;
@@ -47,5 +44,6 @@ bool expandConstantExpr(Function &F);
 void createPageTable(const CreatePageTableArgs& args);
 void enhancedPageTable(const CreatePageTableArgs& args, std::unordered_map<Constant *, unsigned> *FuncIndexMap);
 Value * buildPageTableDecryptIR(const BuildDecryptArgs& args);
-Value * encryptConstant(Constant *plainConstant, Instruction *insertBefore, CryptoUtils *randomEngine, unsigned level);
+Value *encryptConstant(Constant *plainConstant, Instruction *insertBefore,
+                       std::mt19937_64 &rng, unsigned level);
 #endif

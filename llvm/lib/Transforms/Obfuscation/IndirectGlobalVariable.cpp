@@ -4,10 +4,10 @@
 #include "llvm/Transforms/Obfuscation/IndirectGlobalVariable.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 
 #include <random>
 
@@ -26,11 +26,19 @@ struct IndirectGlobalVariable : public FunctionPass {
   std::unordered_map<Constant *, uint64_t> GVKeys;
   std::vector<GlobalVariable *> GVPageTable;
 
-  CryptoUtils RandomEngine;
+  std::mt19937_64 RNG;
   bool RunOnFuncChanged = false;
 
   IndirectGlobalVariable(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
+    uint64_t seed = 0;
+    if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+      llvm::report_fatal_error(
+          StringRef("Failed to get random bytes for page table generation") +
+          errorCode.message());
+    }
+
+    RNG = std::mt19937_64(seed);
   }
 
   StringRef getPassName() const override { return {"IndirectGlobalVariable"}; }
@@ -61,7 +69,7 @@ struct IndirectGlobalVariable : public FunctionPass {
             FunctionGVs[&F].emplace(GV);
             if (GVKeys.count(GV) == 0) {
               GlobalVariables.push_back(GV);
-              GVKeys[GV] = RandomEngine.get_uint64_t();
+              GVKeys[GV] = RNG();
             }
           }
         }
@@ -84,7 +92,7 @@ struct IndirectGlobalVariable : public FunctionPass {
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
     createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectGVs" ;
-    createPageTableArgs.RandomEngine = &RandomEngine;
+    createPageTableArgs.RNG = &RNG;
     createPageTableArgs.M = &M;
     createPageTableArgs.Objects = &GlobalVariables;
     createPageTableArgs.IndexMap = &GVIndex;
@@ -117,7 +125,7 @@ struct IndirectGlobalVariable : public FunctionPass {
     std::unordered_map<Constant *, uint64_t> FuncKeys;
     for (auto GV : FuncGVSet) {
       FuncGVs.push_back(GV);
-      FuncKeys[GV] = RandomEngine.get_uint64_t();
+      FuncKeys[GV] = RNG();
     }
 
     std::vector<GlobalVariable *> FuncGVPageTable;
@@ -127,7 +135,7 @@ struct IndirectGlobalVariable : public FunctionPass {
       CreatePageTableArgs createPageTableArgs;
       createPageTableArgs.CountLoop = opt.level();
       createPageTableArgs.GVNamePrefix = M.getName().str() + Fn.getName().str() + "_IndirectGVs" ;
-      createPageTableArgs.RandomEngine = &RandomEngine;
+      createPageTableArgs.RNG = &RNG;
       createPageTableArgs.M = &M;
       createPageTableArgs.Objects = &FuncGVs;
       createPageTableArgs.IndexMap = &GVIndex;

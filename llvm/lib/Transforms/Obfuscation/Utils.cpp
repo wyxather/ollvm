@@ -7,7 +7,6 @@
 #include "llvm/IR/EHPersonalities.h"
 #include "llvm/IR/NoFolder.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 
 #include <random>
 #include <algorithm>
@@ -208,7 +207,8 @@ void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newInde
 void createPageTable(const CreatePageTableArgs &args) {
   auto& Ctx = args.M->getContext();
   const auto Int32Ty = IntegerType::getInt32Ty(Ctx);
-  std::mt19937_64 re(args.RandomEngine->get_uint64_t());
+
+  std::mt19937_64 re(args.RNG->operator()());
   std::shuffle(args.Objects->begin(), args.Objects->end(), re);
 
   std::vector<Constant *> GVObjects;
@@ -266,7 +266,8 @@ void createPageTable(const CreatePageTableArgs &args) {
 
 void enhancedPageTable(const CreatePageTableArgs &args, std::unordered_map<Constant *, unsigned> *FuncIndexMap) {
   const auto Int32Ty = IntegerType::getInt32Ty(args.M->getContext());
-  std::mt19937_64 re(args.RandomEngine->get_uint64_t());
+
+  std::mt19937_64 re(args.RNG->operator()());
 
   for (unsigned i = 0; i < args.CountLoop; ++i) {
     std::shuffle(args.Objects->begin(), args.Objects->end(), re);
@@ -324,30 +325,6 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
   }
 
   auto createDecIndexSwitch = [&IRB, &M](uint8_t mask, Value *NextIndex, Value *PrevIndex, Value* ObjKey) -> Value* {
-
-    // void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newIndex) {
-    //   switch (mask) {
-    //   case 1:
-    //     preIndex = -preIndex;
-    //     break;
-    //   case 2:
-    //     preIndex = preIndex.rotl(objKey + newIndex);
-    //     break;
-    //   case 3:
-    //     preIndex = preIndex.byteSwap();
-    //     break;
-    //   case 4:
-    //     preIndex = ~preIndex;
-    //     break;
-    //   case 5:
-    //     preIndex = preIndex.rotr(objKey - newIndex);
-    //     break;
-    //   default:
-    //     preIndex = preIndex ^ objKey;
-    //     break;
-    //   }
-    // }
-
     switch (mask) {
     case 1:
       // preIndex = -preIndex;
@@ -429,7 +406,8 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
   llvm_unreachable("BuildDecryptIR unreachable!!!");
 }
 
-Value * encryptConstant(Constant *plainConstant, Instruction *insertBefore, CryptoUtils *randomEngine, unsigned level) {
+Value *encryptConstant(Constant *plainConstant, Instruction *insertBefore,
+                       std::mt19937_64 &rng, unsigned level) {
   auto& Ctx = insertBefore->getContext();
   auto OriginValTy = plainConstant->getType();
   if (OriginValTy->isStructTy() || OriginValTy->isArrayTy() || OriginValTy->isPointerTy()) {
@@ -442,13 +420,13 @@ Value * encryptConstant(Constant *plainConstant, Instruction *insertBefore, Cryp
   
   const auto Key = ConstantInt::get(
       IntegerType::get(Ctx, BitWidth),
-      randomEngine->get_uint64_t());
+      rng());
 
   const auto ConstantInt = ConstantExpr::getBitCast(plainConstant, Key->getType());
   auto Enc = ConstantExpr::getSub(ConstantInt, Key);
   Constant *XorKey = nullptr;
   if (level) {
-    XorKey = ConstantInt::get(Key->getType(), randomEngine->get_uint64_t());
+    XorKey = ConstantInt::get(Key->getType(), rng());
     Enc = ConstantExpr::getXor(Enc, XorKey);
     if (level > 1) {
       Enc = ConstantExpr::getXor(Enc, ConstantExpr::get(Instruction::Mul, XorKey, Key));

@@ -9,7 +9,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 #include <map>
 #include <set>
 #include <iostream>
@@ -50,7 +50,7 @@ struct StringEncryption : public ModulePass {
   };
 
   ObfuscationOptions *ArgsOptions;
-  CryptoUtils RandomEngine;
+  std::mt19937_64 RNG;
   std::vector<CSPEntry *> ConstantStringPool;
   std::map<GlobalVariable *, CSPEntry *> CSPEntryMap;
   std::map<GlobalVariable *, CSUser *> CSUserMap;
@@ -60,6 +60,14 @@ struct StringEncryption : public ModulePass {
   StringEncryption(ObfuscationOptions *argsOptions) : ModulePass(ID) {
     this->ArgsOptions = argsOptions;
     initializeStringEncryptionPass(*PassRegistry::getPassRegistry());
+    uint64_t seed = 0;
+    if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+      llvm::report_fatal_error(
+          StringRef("Failed to get random bytes for page table generation") +
+          errorCode.message());
+    }
+
+    RNG = std::mt19937_64(seed);
   }
 
   bool doFinalization(Module &) override {
@@ -290,7 +298,7 @@ bool StringEncryption::runOnModule(Module &M) {
 
 template <typename T>
 void StringEncryption::getRandomBytes(std::vector<T> &Bytes, uint32_t MinSize, uint32_t MaxSize) {
-  uint32_t N = RandomEngine.get_uint32_t();
+  uint32_t N = static_cast<uint32_t>(RNG());
   uint32_t Len;
 
   assert(MaxSize >= MinSize);
@@ -302,7 +310,11 @@ void StringEncryption::getRandomBytes(std::vector<T> &Bytes, uint32_t MinSize, u
   }
 
   char *Buffer = new char[Len * sizeof(T)];
-  RandomEngine.get_bytes(Buffer, Len * sizeof(T));
+  if (auto errorCode = llvm::getRandomBytes(Buffer, Len * sizeof(T))) {
+    llvm::report_fatal_error(
+        StringRef("Failed to get random bytes for page table generation") +
+        errorCode.message());
+  }
   for (uint32_t i = 0; i < Len; ++i) {
     if constexpr (std::is_same_v<T, uint8_t>) {
       Bytes.push_back(static_cast<uint8_t>(Buffer[i]));

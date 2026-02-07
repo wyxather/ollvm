@@ -15,13 +15,14 @@
 #include "llvm/Transforms/Obfuscation/Flattening.h"
 #include "llvm/Transforms/Obfuscation/LegacyLowerSwitch.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
-#include "llvm/Transforms/Obfuscation/CryptoUtils.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 
 #include <memory>
 #include <random>
+#include <unordered_set>
 
 #define DEBUG_TYPE "flattening"
 
@@ -37,16 +38,24 @@ struct Flattening : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
 
   ObfuscationOptions *ArgsOptions;
-  CryptoUtils         RandomEngine;
+  std::mt19937_64 RNG;
 
   Flattening(unsigned            pointerSize,
              ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->pointerSize = pointerSize;
     this->ArgsOptions = argsOptions;
+    uint64_t seed = 0;
+    if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
+      llvm::report_fatal_error(
+          StringRef("Failed to get random bytes for page table generation") +
+          errorCode.message());
+    }
+
+    RNG = std::mt19937_64(seed);
   }
 
   bool runOnFunction(Function &F) override;
-  bool flatten(Function *f, const ObfOpt &opt);
+  bool flatten(Function *f);
 };
 }
 
@@ -61,7 +70,7 @@ bool Flattening::runOnFunction(Function &F) {
   if (!opt.isEnabled()) {
     return result;
   }
-  if (flatten(tmp, opt)) {
+  if (flatten(tmp)) {
     ++Flattened;
     result = true;
   }
@@ -69,20 +78,26 @@ bool Flattening::runOnFunction(Function &F) {
   return result;
 }
 
-bool Flattening::flatten(Function *f, const ObfOpt &opt) {
+bool Flattening::flatten(Function *f) {
   vector<BasicBlock *> origBB;
 
   auto &Ctx = f->getContext();
-  auto  intType = Type::getInt32Ty(Ctx);
-
+  Type *intType = Type::getInt32Ty(Ctx);
   if (pointerSize == 8) {
     intType = Type::getInt64Ty(Ctx);
   }
+  auto *IntTy = cast<IntegerType>(intType);
 
-  // SCRAMBLER
-  char scrambling_key[16];
-  cryptoutils->get_bytes(scrambling_key, 16);
-  // END OF SCRAMBLER
+  auto randWord = [&]() -> uint64_t {
+    uint64_t v = RNG();
+    if (pointerSize != 8)
+      v &= 0xffffffffull;
+    return v;
+  };
+
+  auto randConst = [&]() -> ConstantInt * {
+    return ConstantInt::get(IntTy, randWord());
+  };
 
   // Lower switch
   auto lower = std::unique_ptr<FunctionPass>(createLegacyLowerSwitchPass());
@@ -108,15 +123,12 @@ bool Flattening::flatten(Function *f, const ObfOpt &opt) {
 
   // Get a pointer on the first BB
   auto insertBlock = &*(f->begin());
-
   auto splitPos = --(insertBlock->end());
-
   if (insertBlock->size() > 1) {
     --splitPos;
   }
 
-  std::mt19937_64 re(RandomEngine.get_uint64_t());
-  std::shuffle(origBB.begin(), origBB.end(), re);
+  std::shuffle(origBB.begin(), origBB.end(), RNG);
 
   auto bbEndOfEntry = insertBlock->splitBasicBlock(splitPos, "first");
   origBB.insert(origBB.begin(), bbEndOfEntry);
@@ -124,39 +136,51 @@ bool Flattening::flatten(Function *f, const ObfOpt &opt) {
   // Remove jump
   insertBlock->getTerminator()->eraseFromParent();
 
+  unordered_set<uint64_t> UsedCases;
+  DenseMap<BasicBlock *, ConstantInt *> CaseVal;
+
+  for (BasicBlock *BB : origBB) {
+    uint64_t v;
+    do {
+      v = randWord();
+    } while (v == 0 || UsedCases.count(v));
+    UsedCases.insert(v);
+    CaseVal[BB] = ConstantInt::get(IntTy, v);
+  }
+
+  ConstantInt *EntryCase = CaseVal[bbEndOfEntry];
+
   // Create switch variable and set as it
   IRBuilder<> IRB{insertBlock};
-  const auto  switchVar = IRB.CreateAlloca(intType, nullptr, "switchVar");
-  const auto  switchXorVar = IRB.CreateAlloca(intType, nullptr, "switchXor");
+  const auto switchVar = IRB.CreateAlloca(IntTy, nullptr, "switchVar");
+  const auto switchXorVar = IRB.CreateAlloca(IntTy, nullptr, "switchXor");
 
-
-  ConstantInt *entryRandomXor = cast<ConstantInt>(
-      ConstantInt::get(intType, RandomEngine.get_uint64_t()));
-  if (pointerSize == 8) {
-    auto xorKey = ConstantExpr::getXor(
-        entryRandomXor,
-        ConstantInt::get(intType, cryptoutils->scramble64(0, scrambling_key)));
-
-    IRB.CreateStore(xorKey, switchVar, true);
-  } else {
-    auto xorKey = ConstantExpr::getXor(
-        entryRandomXor,
-        ConstantInt::get(intType, cryptoutils->scramble32(0, scrambling_key)));
-
-    IRB.CreateStore(xorKey, switchVar, true);
-  }
-  IRB.CreateStore(entryRandomXor, switchXorVar, true);
+  // init：Encoded = EntryCase ^ XorKey
+  ConstantInt *entryXor = randConst();
+  Value *entryEnc = IRB.CreateXor(EntryCase, entryXor);
+  IRB.CreateStore(entryEnc, switchVar, true);
+  IRB.CreateStore(entryXor, switchXorVar, true);
 
   // Create main loop
+  auto bbLoopEntry =
+      BasicBlock::Create(f->getContext(), "loopEntry", f, insertBlock);
+  auto bbLoopEnd =
+      BasicBlock::Create(f->getContext(), "loopEnd", f, insertBlock);
 
-  auto bbLoopEntry = BasicBlock::Create(f->getContext(), "loopEntry", f,
-                                        insertBlock);
-  auto bbLoopEnd = BasicBlock::Create(f->getContext(), "loopEnd", f,
-                                      insertBlock);
+  // loopEntry
   IRB.SetInsertPoint(bbLoopEntry);
-  auto switchVarLoad = IRB.CreateLoad(intType, switchVar, "switchVar");
-  auto switchXorLoad = IRB.CreateLoad(intType, switchXorVar, "switchXor");
-  auto switchCondition = IRB.CreateXor(switchVarLoad, switchXorLoad);
+  Value *enc0 = IRB.CreateLoad(IntTy, switchVar, "switchVar.enc0");
+  Value *xor0 = IRB.CreateLoad(IntTy, switchXorVar, "switchXor.xor0");
+
+  // rolling delta
+  ConstantInt *delta = randConst();
+  Value *enc1 = IRB.CreateXor(enc0, delta, "switchVar.enc1");
+  Value *xor1 = IRB.CreateXor(xor0, delta, "switchXor.xor1");
+  IRB.CreateStore(enc1, switchVar, true);
+  IRB.CreateStore(xor1, switchXorVar, true);
+
+  Value *switchCondition = IRB.CreateXor(enc1, xor1, "switchCond");
+
   // Move first BB on top
   insertBlock->moveBefore(bbLoopEntry);
   BranchInst::Create(bbLoopEntry, insertBlock);
@@ -164,8 +188,8 @@ bool Flattening::flatten(Function *f, const ObfOpt &opt) {
   // loopEnd jump to loopEntry
   BranchInst::Create(bbLoopEntry, bbLoopEnd);
 
-  auto swDefault = BasicBlock::Create(f->getContext(), "switchDefault", f,
-                                      bbLoopEnd);
+  auto swDefault =
+      BasicBlock::Create(f->getContext(), "switchDefault", f, bbLoopEnd);
   BranchInst::Create(bbLoopEnd, swDefault);
 
   // Create switch instruction itself and set condition
@@ -174,28 +198,16 @@ bool Flattening::flatten(Function *f, const ObfOpt &opt) {
 
   // Remove branch jump from 1st BB and make a jump to the while
   f->begin()->getTerminator()->eraseFromParent();
-
   BranchInst::Create(bbLoopEntry, &*f->begin());
 
-  // Put all BB in the switch
+  // Put all BB in the switch (case 值使用纯随机表)
   for (auto bi = origBB.begin(); bi != origBB.end(); ++bi) {
-    const auto   bb = *bi;
-    ConstantInt *numToCase;
-    // Add case to switch
-    if (pointerSize == 8) {
-      numToCase = cast<ConstantInt>(ConstantInt::get(
-          intType,
-          cryptoutils->scramble64(switchI->getNumCases(), scrambling_key)));
-    } else {
-      numToCase = cast<ConstantInt>(ConstantInt::get(
-          intType,
-          cryptoutils->scramble32(switchI->getNumCases(), scrambling_key)));
-    }
+    auto bb = *bi;
 
     // Move the BB inside the switch (only visual, no code logic)
     bb->moveBefore(bbLoopEnd);
 
-    switchI->addCase(numToCase, bb);
+    switchI->addCase(CaseVal[bb], bb);
   }
 
   // Recalculate switchVar
@@ -208,107 +220,60 @@ bool Flattening::flatten(Function *f, const ObfOpt &opt) {
     }
 
     IRB.SetInsertPoint(bb->getTerminator());
-    // If it's a non-conditional jump
-    if (bb->getTerminator()->getNumSuccessors() == 1) {
-      // Get successor and delete terminator
-      auto tbb = bb->getTerminator()->getSuccessor(0);
 
-      // Get next case
-      auto numToCase = switchI->findCaseDest(tbb);
+    auto writeNextEncoded = [&](Value *NextCaseVal) {
+      // NextEnc = NextCase ^ NewXor
+      ConstantInt *newXor = randConst();
+      Value *nextEnc = IRB.CreateXor(NextCaseVal, newXor);
 
-      // If target not in switch (e.g., back-edge to entry block), use case 0
-      // Case 0 is bbEndOfEntry, the entry block continuation
-      if (numToCase == nullptr) {
-        if (pointerSize == 8) {
-          numToCase = cast<ConstantInt>(
-              ConstantInt::get(
-                  intType,
-                  cryptoutils->scramble64(0, scrambling_key)));
-        } else {
-          numToCase = cast<ConstantInt>(
-              ConstantInt::get(
-                  intType,
-                  llvm::cryptoutils->scramble32(0, scrambling_key)));
-        }
-      }
+      IRB.CreateStore(nextEnc, switchVar, true);
+      IRB.CreateStore(newXor, switchXorVar, true);
 
-      ConstantInt *randomXor = cast<ConstantInt>(
-          ConstantInt::get(intType, RandomEngine.get_uint64_t()));
-
-      auto xorKey = ConstantExpr::getXor(randomXor, numToCase);
-
-      // Update switchVar and jump to the end of loop
-      IRB.CreateStore(xorKey, switchVar, true);
-      IRB.CreateStore(randomXor, switchXorVar, true);
       IRB.CreateBr(bbLoopEnd);
       bb->getTerminator()->eraseFromParent();
+    };
+
+    // If it's a non-conditional jump
+    if (bb->getTerminator()->getNumSuccessors() == 1) {
+      auto tbb = bb->getTerminator()->getSuccessor(0);
+
+      Value *nextCase = nullptr;
+      if (CaseVal.count(tbb)) {
+        nextCase = CaseVal[tbb];
+      } else {
+        nextCase = EntryCase;
+      }
+
+      writeNextEncoded(nextCase);
       continue;
     }
 
     // If it's a conditional jump
     if (bb->getTerminator()->getNumSuccessors() == 2) {
-      // Get next cases
-      auto numToCaseTrue =
-          switchI->findCaseDest(bb->getTerminator()->getSuccessor(0));
-      auto numToCaseFalse =
-          switchI->findCaseDest(bb->getTerminator()->getSuccessor(1));
+      auto *br = cast<BranchInst>(bb->getTerminator());
 
-      // If target not in switch (e.g., back-edge to entry block), use case 0
-      if (numToCaseTrue == nullptr) {
-        if (pointerSize == 8) {
-          numToCaseTrue = cast<ConstantInt>(
-              ConstantInt::get(
-                  intType,
-                  llvm::cryptoutils->scramble64(0, scrambling_key)));
-        } else {
-          numToCaseTrue = cast<ConstantInt>(
-              ConstantInt::get(
-                  intType,
-                  llvm::cryptoutils->scramble32(0, scrambling_key)));
-        }
-      }
+      auto *succT = br->getSuccessor(0);
+      auto *succF = br->getSuccessor(1);
 
-      if (numToCaseFalse == nullptr) {
-        if (pointerSize == 8) {
-          numToCaseFalse = cast<ConstantInt>(
-              ConstantInt::get(
-                  intType,
-                  llvm::cryptoutils->scramble64(0, scrambling_key)));
-        } else {
-          numToCaseFalse = cast<ConstantInt>(
-              ConstantInt::get(
-                  intType,
-                  llvm::cryptoutils->scramble32(0, scrambling_key)));
-        }
-      }
+      Value *caseT =
+          CaseVal.count(succT) ? CaseVal[succT] : EntryCase;
+      Value *caseF =
+          CaseVal.count(succF) ? CaseVal[succF] : EntryCase;
 
-      ConstantInt *randomXor = cast<ConstantInt>(
-          ConstantInt::get(intType, RandomEngine.get_uint64_t()));
+      Value *selectedCase =
+          IRB.CreateSelect(br->getCondition(), caseT, caseF, "nextCase");
 
-      auto xorKeyT = ConstantExpr::getXor(numToCaseTrue, randomXor);
-      auto xorKeyF = ConstantExpr::getXor(numToCaseFalse, randomXor);
-      IRB.CreateStore(randomXor, switchXorVar, true);
-
-      // Create a SelectInst
-      auto br = cast<BranchInst>(bb->getTerminator());
-      auto sel = IRB.CreateSelect(br->getCondition(), xorKeyT, xorKeyF);
-
-      // Update switchVar and jump to the end of loop
-      IRB.CreateStore(sel, switchVar, true);
-      IRB.CreateBr(bbLoopEnd);
-
-      // Erase terminator
-      bb->getTerminator()->eraseFromParent();
+      writeNextEncoded(selectedCase);
       continue;
     }
   }
 
   fixStack(f);
-
   lower->runOnFunction(*f);
 
   return true;
 }
+
 
 char                            Flattening::ID = 0;
 static RegisterPass<Flattening> X("flattening", "Call graph flattening");
