@@ -23,6 +23,7 @@ class ObfuscationPassManagerPass
     : public PassInfoMixin<ObfuscationPassManagerPass> {
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+    outs() << M.getName() << "\n";
     ModulePass *OPM = createObfuscationPassManager();
     bool Changed = OPM->runOnModule(M);
     OPM->doFinalization(M);
