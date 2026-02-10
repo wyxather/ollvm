@@ -12,9 +12,8 @@
 #include "llvm/IR/NoFolder.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Support/RandomNumberGenerator.h"
-#include <map>
-#include <set>
-#include <iostream>
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include <algorithm>
 
 #define DEBUG_TYPE "constant-int-encryption"
@@ -27,7 +26,7 @@ struct ConstantIntEncryption : public FunctionPass {
   static char         ID;
   ObfuscationOptions *ArgsOptions;
 
-  std::unordered_map<Function *, std::set<Instruction *>> FunctionModifyIRs;
+  DenseMap<Function *, SmallPtrSet<Instruction *, 16>> FunctionModifyIRs;
   std::mt19937_64 RNG;
 
   ConstantIntEncryption(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
@@ -78,7 +77,7 @@ struct ConstantIntEncryption : public FunctionPass {
             Value* Opr = PHI ? PHI->getIncomingValue(i) : I.getOperand(i);
             auto CTI = dyn_cast<ConstantInt>(Opr);
             if (CTI && CTI->getBitWidth() > 7) {
-              FunctionModifyIRs[&F].emplace(&I);
+              FunctionModifyIRs[&F].insert(&I);
               break;
             }
           }

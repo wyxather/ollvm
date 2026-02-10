@@ -10,9 +10,9 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/RandomNumberGenerator.h"
-#include <map>
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include <set>
-#include <iostream>
 #include <algorithm>
 
 #define DEBUG_TYPE "string-encryption"
@@ -52,8 +52,8 @@ struct StringEncryption : public ModulePass {
   ObfuscationOptions *ArgsOptions;
   std::mt19937_64 RNG;
   std::vector<CSPEntry *> ConstantStringPool;
-  std::map<GlobalVariable *, CSPEntry *> CSPEntryMap;
-  std::map<GlobalVariable *, CSUser *> CSUserMap;
+  DenseMap<GlobalVariable *, CSPEntry *> CSPEntryMap;
+  DenseMap<GlobalVariable *, CSUser *> CSUserMap;
   GlobalVariable *EncryptedStringTable = nullptr;
   std::set<GlobalVariable *> MaybeDeadGlobalVars;
 
@@ -88,7 +88,7 @@ struct StringEncryption : public ModulePass {
   StringRef getPassName() const override { return {"StringEncryption"}; }
 
   bool runOnModule(Module &M) override;
-  static void collectConstantStringUser(GlobalVariable *CString, std::set<GlobalVariable *> &Users);
+  static void collectConstantStringUser(GlobalVariable *CString, SmallPtrSetImpl<GlobalVariable *> &Users);
   static bool isValidToEncrypt(GlobalVariable *GV);
   bool processConstantStringUse(Function *F);
   void deleteUnusedGlobalVariable();
@@ -104,7 +104,7 @@ struct StringEncryption : public ModulePass {
 
 char StringEncryption::ID = 0;
 bool StringEncryption::runOnModule(Module &M) {
-  std::set<GlobalVariable *> ConstantStringUsers;
+SmallPtrSet<GlobalVariable *, 16> ConstantStringUsers;
 
   // collect all c strings
 
@@ -695,7 +695,7 @@ bool StringEncryption::processConstantStringUse(Function *F) {
   return Changed;
 }
 
-void StringEncryption::collectConstantStringUser(GlobalVariable *CString, std::set<GlobalVariable *> &Users) {
+void StringEncryption::collectConstantStringUser(GlobalVariable *CString, SmallPtrSetImpl<GlobalVariable *> &Users) {
   SmallPtrSet<Value *, 16> Visited;
   SmallVector<Value *, 16> ToVisit;
 

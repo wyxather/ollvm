@@ -6,6 +6,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/Module.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 
@@ -19,15 +20,15 @@ struct IndirectCall : public FunctionPass {
   static char ID;
   ObfuscationOptions *ArgsOptions;
 
-  std::unordered_map<Function *, std::set<CallInst *>> FunctionCallSites;
-  std::unordered_map<Function *, std::set<Function *>> FunctionCallees;
+  DenseMap<Function *, SmallPtrSet<CallInst *, 8>> FunctionCallSites;
+  DenseMap<Function *, SmallPtrSet<Function *, 8>> FunctionCallees;
 
   std::vector<Constant *> Callees;
-  std::unordered_map<Constant *, unsigned> CalleeIndex;
+  DenseMap<Constant *, unsigned> CalleeIndex;
   // 63 - 32====31 - 0
   //  Mask=======Key
-  std::unordered_map<Constant *, uint64_t> CalleeKeys;
-  std::vector<GlobalVariable *> CalleePageTable;
+  DenseMap<Constant *, uint64_t> CalleeKeys;
+  SmallVector<GlobalVariable *, 8> CalleePageTable;
   std::mt19937_64 RNG;
 
   bool RunOnFuncChanged = false;
@@ -67,8 +68,8 @@ struct IndirectCall : public FunctionPass {
               continue;
             }
 
-            FunctionCallSites[&F].emplace(CI);
-            FunctionCallees[&F].emplace(Callee);
+            FunctionCallSites[&F].insert(CI);
+            FunctionCallees[&F].insert(Callee);
 
             if (CalleeKeys.count(Callee) == 0) {
               Callees.push_back(Callee);
@@ -126,14 +127,14 @@ struct IndirectCall : public FunctionPass {
     }
 
     std::vector<Constant *> FuncCallees;
-    std::unordered_map<Constant *, uint64_t> FuncKeys;
+    DenseMap<Constant *, uint64_t> FuncKeys;
     for (auto callee : FuncCalleesSet) {
       FuncCallees.push_back(callee);
       FuncKeys[callee] = RNG();
     }
 
-    std::vector<GlobalVariable *> FuncCalleePageTable;
-    std::unordered_map<Constant *, unsigned> FuncCalleeIndex;
+    SmallVector<GlobalVariable *, 8> FuncCalleePageTable;
+    DenseMap<Constant *, unsigned> FuncCalleeIndex;
 
     if (opt.level()) {
       CreatePageTableArgs createPageTableArgs;

@@ -1,13 +1,13 @@
-#ifndef __UTILS_OBF__
+﻿#ifndef __UTILS_OBF__
 #define __UTILS_OBF__
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Transforms/Utils/Local.h" // For DemoteRegToStack and DemotePHIToStack
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <random>
-#include <unordered_map>
-#include <set>
 #include <vector>
 
 using namespace llvm;
@@ -17,9 +17,9 @@ struct CreatePageTableArgs {
   std::mt19937_64 *RNG;
   Module* M;
   std::vector<Constant *> *Objects;
-  std::unordered_map<Constant *, unsigned> *IndexMap;
-  std::unordered_map<Constant *, uint64_t> *ObjectKeys;
-  std::vector<GlobalVariable *> *OutPageTable;
+  DenseMap<Constant *, unsigned> *IndexMap;
+  DenseMap<Constant *, uint64_t> *ObjectKeys;
+  SmallVectorImpl<GlobalVariable *> *OutPageTable;
 };
 
 
@@ -30,8 +30,8 @@ struct BuildDecryptArgs {
   Function *Fn;
   Instruction *InsertBefore;
   Type *LoadTy;
-  std::vector<GlobalVariable *> *ModulePageTable;
-  std::vector<GlobalVariable *> *FuncPageTable;
+  SmallVectorImpl<GlobalVariable *> *ModulePageTable;
+  SmallVectorImpl<GlobalVariable *> *FuncPageTable;
   uint64_t ModuleKey;
   uint64_t FuncKey;
 };
@@ -42,7 +42,7 @@ CallBase* fixEH(CallBase* CB);
 void LowerConstantExpr(Function &F);
 bool expandConstantExpr(Function &F);
 void createPageTable(const CreatePageTableArgs& args);
-void enhancedPageTable(const CreatePageTableArgs& args, std::unordered_map<Constant *, unsigned> *FuncIndexMap);
+void enhancedPageTable(const CreatePageTableArgs& args, DenseMap<Constant *, unsigned> *FuncIndexMap);
 Value * buildPageTableDecryptIR(const BuildDecryptArgs& args);
 Value *encryptConstant(Constant *plainConstant, Instruction *insertBefore,
                        std::mt19937_64 &rng, unsigned level);

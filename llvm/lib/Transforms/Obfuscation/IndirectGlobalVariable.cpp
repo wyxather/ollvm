@@ -6,6 +6,7 @@
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/Module.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 
@@ -19,12 +20,12 @@ struct IndirectGlobalVariable : public FunctionPass {
   static char ID;
   ObfuscationOptions *ArgsOptions;
 
-  std::unordered_map<Function *, std::set<GlobalVariable *>> FunctionGVs;
+  DenseMap<Function *, SmallPtrSet<GlobalVariable *, 8>> FunctionGVs;
 
   std::vector<Constant *> GlobalVariables;
-  std::unordered_map<Constant *, unsigned> GVIndex;
-  std::unordered_map<Constant *, uint64_t> GVKeys;
-  std::vector<GlobalVariable *> GVPageTable;
+  DenseMap<Constant *, unsigned> GVIndex;
+  DenseMap<Constant *, uint64_t> GVKeys;
+  SmallVector<GlobalVariable *, 8> GVPageTable;
 
   std::mt19937_64 RNG;
   bool RunOnFuncChanged = false;
@@ -66,7 +67,7 @@ struct IndirectGlobalVariable : public FunctionPass {
               continue;
             }
 
-            FunctionGVs[&F].emplace(GV);
+            FunctionGVs[&F].insert(GV);
             if (GVKeys.count(GV) == 0) {
               GlobalVariables.push_back(GV);
               GVKeys[GV] = RNG();
@@ -122,14 +123,14 @@ struct IndirectGlobalVariable : public FunctionPass {
     }
 
     std::vector<Constant *> FuncGVs;
-    std::unordered_map<Constant *, uint64_t> FuncKeys;
+    DenseMap<Constant *, uint64_t> FuncKeys;
     for (auto GV : FuncGVSet) {
       FuncGVs.push_back(GV);
       FuncKeys[GV] = RNG();
     }
 
-    std::vector<GlobalVariable *> FuncGVPageTable;
-    std::unordered_map<Constant *, unsigned> FuncGVIndex;
+    SmallVector<GlobalVariable *, 8> FuncGVPageTable;
+    DenseMap<Constant *, unsigned> FuncGVIndex;
 
     if (opt.level()) {
       CreatePageTableArgs createPageTableArgs;

@@ -7,6 +7,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/Module.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 
 #include <random>
@@ -19,13 +20,13 @@ struct IndirectBranch : public FunctionPass {
   static char ID;
   ObfuscationOptions *ArgsOptions;
 
-  std::unordered_map<Function *, std::set<Constant *>> FunctionBBs;
-  std::unordered_map<Function *, std::set<BranchInst *>> FunctionBrs;
+  DenseMap<Function *, SmallPtrSet<Constant *, 8>> FunctionBBs;
+  DenseMap<Function *, SmallPtrSet<BranchInst *, 8>> FunctionBrs;
 
   std::vector<Constant *> BBAddrTargets;
-  std::unordered_map<Constant *, unsigned> BBIndex;
-  std::unordered_map<Constant *, uint64_t> BBKeys;
-  std::vector<GlobalVariable *> BBPageTable;
+  DenseMap<Constant *, unsigned> BBIndex;
+  DenseMap<Constant *, uint64_t> BBKeys;
+  SmallVector<GlobalVariable *, 8> BBPageTable;
   std::mt19937_64 RNG;
 
   bool RunOnFuncChanged = false;
@@ -62,12 +63,12 @@ struct IndirectBranch : public FunctionPass {
       for (auto &BB : F) {
         if (auto *BI = dyn_cast<BranchInst>(BB.getTerminator())) {
           if (BI->isConditional()) {
-            FunctionBrs[&F].emplace(BI);
+            FunctionBrs[&F].insert(BI);
             unsigned N = BI->getNumSuccessors();
             for (unsigned I = 0; I < N; I++) {
               BasicBlock *Successor = BI->getSuccessor(I);
               auto BBAddr = BlockAddress::get(Successor);
-              FunctionBBs[&F].emplace(BBAddr);
+              FunctionBBs[&F].insert(BBAddr);
               if (BBKeys.count(BBAddr) == 0) {
                 BBAddrTargets.push_back(BBAddr);
                 BBKeys[BBAddr] = BBKey;
@@ -127,7 +128,7 @@ struct IndirectBranch : public FunctionPass {
     }
 
     std::vector<Constant *> FuncBBs;
-    std::unordered_map<Constant *, uint64_t> FuncKeys;
+    DenseMap<Constant *, uint64_t> FuncKeys;
     auto FuncKey = RNG();
 
     for (auto bb : FuncBBsSet) {
@@ -135,8 +136,8 @@ struct IndirectBranch : public FunctionPass {
       FuncKeys[bb] = FuncKey;
     }
 
-    std::vector<GlobalVariable *> FuncBBPageTable;
-    std::unordered_map<Constant *, unsigned> FuncBBIndex;
+    SmallVector<GlobalVariable *, 8> FuncBBPageTable;
+    DenseMap<Constant *, unsigned> FuncBBIndex;
 
     if (opt.level()) {
       CreatePageTableArgs createPageTableArgs;
@@ -153,7 +154,7 @@ struct IndirectBranch : public FunctionPass {
     }
 
     auto Int32Ty = IntegerType::getInt32Ty(Ctx);
-    for (auto &BI : FuncBrs) {
+    for (auto BI : FuncBrs) {
       if (BI && BI->isConditional()) {
         IRBuilder<> IRB(BI);
 

@@ -28,9 +28,9 @@ bool valueEscapes(Instruction *Inst) {
 }
 
 void fixStack(Function *f) {
-  // Try to remove phi node and demote reg to stack
-  std::vector<PHINode *>     tmpPhi;
-  std::vector<Instruction *> tmpReg;
+// Try to remove phi node and demote reg to stack
+SmallVector<PHINode *, 16>     tmpPhi;
+SmallVector<Instruction *, 16> tmpReg;
   BasicBlock *               bbEntry = &*f->begin();
 
   do {
@@ -54,11 +54,11 @@ void fixStack(Function *f) {
       }
     }
     for (unsigned int i = 0; i != tmpReg.size(); ++i) {
-      DemoteRegToStack(*tmpReg.at(i));
+      DemoteRegToStack(*tmpReg[i]);
     }
 
     for (unsigned int i = 0; i != tmpPhi.size(); ++i) {
-      DemotePHIToStack(tmpPhi.at(i));
+      DemotePHIToStack(tmpPhi[i]);
     }
 
   } while (tmpReg.size() != 0 || tmpPhi.size() != 0);
@@ -267,7 +267,7 @@ void createPageTable(const CreatePageTableArgs &args) {
 
 }
 
-void enhancedPageTable(const CreatePageTableArgs &args, std::unordered_map<Constant *, unsigned> *FuncIndexMap) {
+void enhancedPageTable(const CreatePageTableArgs &args, DenseMap<Constant *, unsigned> *FuncIndexMap) {
   const auto Int32Ty = IntegerType::getInt32Ty(args.M->getContext());
 
   std::mt19937_64 re(args.RNG->operator()());
@@ -367,19 +367,19 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
     auto ConstantFuncKey = ConstantInt::get(Int32Ty, FuncKey);
 
     for (int i = args.FuncPageTable->size() - 1; i >= 0; --i) {
-      auto TargetPage = args.FuncPageTable->at(i);
+      auto TargetPage = args.FuncPageTable->operator[](i);
       auto PrevIndex = NextIndex;
       Value *GEP = IRB.CreateGEP(
           TargetPage->getValueType(), TargetPage,
           {Zero, NextIndex});
       NextIndex = IRB.CreateLoad(Int32Ty, GEP);
-      std::vector<uint8_t> maskIndex;
+      SmallVector<uint8_t, 16> maskIndex;
       for (unsigned j = 0; j < 4 * args.FuncLoopCount; ++j) {
         auto mask = static_cast<uint8_t>(FuncMask >> (j * 2)) % 6u;
         maskIndex.push_back(mask);
       }
       for (int j = maskIndex.size() - 1; j >= 0; --j) {
-        NextIndex = createDecIndexSwitch(maskIndex.at(j), NextIndex, PrevIndex, ConstantFuncKey);
+        NextIndex = createDecIndexSwitch(maskIndex[j], NextIndex, PrevIndex, ConstantFuncKey);
       }
     }
   }
@@ -387,20 +387,20 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
   auto ConstantModuleKey = ConstantInt::get(Int32Ty, ModuleKey);
 
   for (int i = args.ModulePageTable->size() - 1; i >= 0; --i) {
-    auto TargetPage = args.ModulePageTable->at(i);
+    auto TargetPage = args.ModulePageTable->operator[](i);
     auto PrevIndex = NextIndex;
     Value *GEP = IRB.CreateGEP(
       TargetPage->getValueType(), TargetPage,
       {Zero, NextIndex});
     if (i) {
       NextIndex = IRB.CreateLoad(Int32Ty, GEP);
-      std::vector<uint8_t> maskIndex;
+      SmallVector<uint8_t, 16> maskIndex;
       for (unsigned j = 0; j < 8; ++j) {
         auto mask = static_cast<uint8_t>(ModuleMask >> (j * 3)) % 6u;
         maskIndex.push_back(mask);
       }
       for (int j = maskIndex.size() - 1; j >= 0; --j) {
-        NextIndex = createDecIndexSwitch(maskIndex.at(j), NextIndex, PrevIndex, ConstantModuleKey);
+        NextIndex = createDecIndexSwitch(maskIndex[j], NextIndex, PrevIndex, ConstantModuleKey);
       }
       continue;
     }

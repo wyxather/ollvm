@@ -1,4 +1,4 @@
-//===- Flattening.cpp - Flattening Obfuscation pass------------------------===//
+﻿//===- Flattening.cpp - Flattening Obfuscation pass------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -22,7 +22,7 @@
 
 #include <memory>
 #include <random>
-#include <unordered_set>
+#include "llvm/ADT/DenseSet.h"
 
 #define DEBUG_TYPE "flattening"
 
@@ -79,7 +79,7 @@ bool Flattening::runOnFunction(Function &F) {
 }
 
 bool Flattening::flatten(Function *f) {
-  vector<BasicBlock *> origBB;
+  SmallVector<BasicBlock *, 32> origBB;
 
   auto &Ctx = f->getContext();
   Type *intType = Type::getInt32Ty(Ctx);
@@ -136,7 +136,7 @@ bool Flattening::flatten(Function *f) {
   // Remove jump
   insertBlock->getTerminator()->eraseFromParent();
 
-  unordered_set<uint64_t> UsedCases;
+  DenseSet<uint64_t> UsedCases;
   DenseMap<BasicBlock *, ConstantInt *> CaseVal;
 
   for (BasicBlock *BB : origBB) {
