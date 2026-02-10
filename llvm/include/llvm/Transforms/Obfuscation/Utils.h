@@ -21,6 +21,7 @@ struct CreatePageTableArgs {
   DenseMap<Constant *, unsigned> *IndexMap;
   DenseMap<Constant *, uint64_t> *ObjectKeys;
   SmallVectorImpl<GlobalVariable *> *OutPageTable;
+  uint64_t PtrEncKey;
 };
 
 
@@ -35,6 +36,9 @@ struct BuildDecryptArgs {
   SmallVectorImpl<GlobalVariable *> *FuncPageTable;
   uint64_t ModuleKey;
   uint64_t FuncKey;
+  uint64_t PtrEncKey;
+  int PtrAuthKey;      // -1 = no PAC, 0 = IA (code), 2 = DA (data)
+  uint64_t PtrAuthDisc; // ptrauth discriminator
 };
 
 IntegerType *getPageTableIntTy(Module &M);

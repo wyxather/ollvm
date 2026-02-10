@@ -9,6 +9,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/RandomNumberGenerator.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include <random>
 
@@ -28,6 +29,7 @@ struct IndirectGlobalVariable : public FunctionPass {
   SmallVector<GlobalVariable *, 8> GVPageTable;
 
   std::mt19937_64 RNG;
+  uint64_t PtrEncKey = 0;
   bool RunOnFuncChanged = false;
 
   IndirectGlobalVariable(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
@@ -90,6 +92,8 @@ struct IndirectGlobalVariable : public FunctionPass {
       return false;
     }
 
+    PtrEncKey = RNG();
+
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
     createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectGVs" ;
@@ -99,6 +103,7 @@ struct IndirectGlobalVariable : public FunctionPass {
     createPageTableArgs.IndexMap = &GVIndex;
     createPageTableArgs.ObjectKeys = &GVKeys;
     createPageTableArgs.OutPageTable = &GVPageTable;
+    createPageTableArgs.PtrEncKey = PtrEncKey;
 
     createPageTable(createPageTableArgs);
     return false;
@@ -175,6 +180,10 @@ struct IndirectGlobalVariable : public FunctionPass {
           buildDecrypt.FuncPageTable = &FuncGVPageTable;
           buildDecrypt.ModuleKey = GVKeys[GV];
           buildDecrypt.FuncKey = FuncKeys[GV];
+          buildDecrypt.PtrEncKey = PtrEncKey;
+          Triple T(M.getTargetTriple());
+          buildDecrypt.PtrAuthKey = T.isAArch64() ? 2 : -1;
+          buildDecrypt.PtrAuthDisc = 0;
 
           auto GVPtr = buildPageTableDecryptIR(buildDecrypt);
           if (PHI)

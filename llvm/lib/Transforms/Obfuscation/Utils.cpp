@@ -245,21 +245,24 @@ void maskCipher(uint8_t mask, APInt &preIndex, uint64_t objKey, unsigned newInde
 void createPageTable(const CreatePageTableArgs &args) {
 auto *IntTy = getPageTableIntTy(*args.M);
 const unsigned BitWidth = IntTy->getBitWidth();
-auto& Ctx = args.M->getContext();
 
 std::mt19937_64 re(args.RNG->operator()());
 std::shuffle(args.Objects->begin(), args.Objects->end(), re);
 
+auto PtrEncKeyConst = ConstantInt::get(IntTy, args.PtrEncKey);
 std::vector<Constant *> GVObjects;
 for (unsigned i = 0; i < args.Objects->size(); ++i) {
   auto Obj = args.Objects->at(i);
-  GVObjects.push_back(Obj);
+  if (auto *CPA = dyn_cast<ConstantPtrAuth>(Obj))
+    Obj = CPA->getPointer();
+  auto PtrInt = ConstantExpr::getPtrToInt(Obj, IntTy);
+  GVObjects.push_back(ConstantExpr::get(Instruction::Add, PtrInt, PtrEncKeyConst));
   args.IndexMap->insert_or_assign(Obj, i);
 }
 
 {
   auto GVNameObjects(args.GVNamePrefix + "_objects");
-  auto ATy = ArrayType::get(PointerType::getUnqual(Ctx), GVObjects.size());
+  auto ATy = ArrayType::get(IntTy, GVObjects.size());
   auto CA = ConstantArray::get(ATy, ArrayRef(GVObjects));
   auto GV = new GlobalVariable(*args.M, ATy, false, 
                                GlobalValue::LinkageTypes::InternalLinkage,
@@ -483,7 +486,19 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       }
       continue;
     }
-    return IRB.CreateLoad(args.LoadTy, GEP);
+    // Objects array stores encrypted integers: ptrtoint(Obj) + PtrEncKey
+    auto EncInt = IRB.CreateLoad(IntTy, GEP);
+    auto DecInt = IRB.CreateSub(EncInt, ConstantInt::get(IntTy, args.PtrEncKey));
+    Value *DecPtr = IRB.CreateIntToPtr(DecInt, args.LoadTy);
+    // Optional PAC pointer signing for AArch64
+    if (args.PtrAuthKey >= 0) {
+      DecPtr = IRB.CreateCall(
+        Intrinsic::getOrInsertDeclaration(M, Intrinsic::ptrauth_sign),
+        {DecPtr,
+         ConstantInt::get(Type::getInt32Ty(Ctx), args.PtrAuthKey),
+         ConstantInt::get(IntTy, args.PtrAuthDisc)});
+    }
+    return DecPtr;
   }
   llvm_unreachable("BuildDecryptIR unreachable!!!");
 }

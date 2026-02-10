@@ -9,6 +9,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/RandomNumberGenerator.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include <random>
 
@@ -30,6 +31,7 @@ struct IndirectCall : public FunctionPass {
   DenseMap<Constant *, uint64_t> CalleeKeys;
   SmallVector<GlobalVariable *, 8> CalleePageTable;
   std::mt19937_64 RNG;
+  uint64_t PtrEncKey = 0;
 
   bool RunOnFuncChanged = false;
 
@@ -94,6 +96,8 @@ struct IndirectCall : public FunctionPass {
       return false;
     }
 
+    PtrEncKey = RNG();
+
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
     createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectCallee" ;
@@ -103,6 +107,7 @@ struct IndirectCall : public FunctionPass {
     createPageTableArgs.IndexMap = &CalleeIndex;
     createPageTableArgs.ObjectKeys = &CalleeKeys;
     createPageTableArgs.OutPageTable = &CalleePageTable;
+    createPageTableArgs.PtrEncKey = PtrEncKey;
 
     createPageTable(createPageTableArgs);
     return false;
@@ -175,6 +180,10 @@ struct IndirectCall : public FunctionPass {
       buildDecrypt.FuncPageTable = &FuncCalleePageTable;
       buildDecrypt.ModuleKey = CalleeKeys[Callee];
       buildDecrypt.FuncKey = FuncKeys[Callee];
+      buildDecrypt.PtrEncKey = PtrEncKey;
+      Triple T(M.getTargetTriple());
+      buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1; // IA for code pointers
+      buildDecrypt.PtrAuthDisc = 0;
 
 
       auto FnPtr = buildPageTableDecryptIR(buildDecrypt);

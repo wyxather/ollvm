@@ -9,6 +9,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/RandomNumberGenerator.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include <random>
 
@@ -28,6 +29,7 @@ struct IndirectBranch : public FunctionPass {
   DenseMap<Constant *, uint64_t> BBKeys;
   SmallVector<GlobalVariable *, 8> BBPageTable;
   std::mt19937_64 RNG;
+  uint64_t PtrEncKey = 0;
 
   bool RunOnFuncChanged = false;
 
@@ -93,6 +95,8 @@ struct IndirectBranch : public FunctionPass {
       return false;
     }
 
+    PtrEncKey = RNG();
+
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
     createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectBr" ;
@@ -102,6 +106,7 @@ struct IndirectBranch : public FunctionPass {
     createPageTableArgs.IndexMap = &BBIndex;
     createPageTableArgs.ObjectKeys = &BBKeys;
     createPageTableArgs.OutPageTable = &BBPageTable;
+    createPageTableArgs.PtrEncKey = PtrEncKey;
 
     createPageTable(createPageTableArgs);
     return false;
@@ -186,6 +191,10 @@ struct IndirectBranch : public FunctionPass {
         buildDecrypt.FuncPageTable = &FuncBBPageTable;
         buildDecrypt.ModuleKey = BBKeys[AddrTBB];
         buildDecrypt.FuncKey = FuncKeys[AddrTBB];
+        buildDecrypt.PtrEncKey = PtrEncKey;
+        Triple T(M.getTargetTriple());
+        buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1;
+        buildDecrypt.PtrAuthDisc = 0;
 
         auto TargetPtr = buildPageTableDecryptIR(buildDecrypt);
         IndirectBrInst *IBI = IndirectBrInst::Create(TargetPtr, 2);
