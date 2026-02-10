@@ -39,7 +39,7 @@
  - 浮点常量加密(`-mllvm -irobf-cfe`) (Win64-MT-19.1.3-obf1.6.0 or later)
  - Microsoft CXXABI RTTI Name 擦除器 (实验性功能!) [需要指定配置文件路径 以及 配置文件`randomSeed`字段(32字节，不足会在后面补0，超过会截断)] (`-mllvm -irobf-rtti`) (Win64-MT-20.1.7-obf1.7.0 or later)
  - 全部 (`-mllvm -irobf-indbr -mllvm -irobf-icall -mllvm -irobf-indgv -mllvm -irobf-cse -mllvm -irobf-fla -mllvm -irobf-cie -mllvm -irobf-cfe -mllvm -irobf-rtti`)
- - 或直接通过配置文件管理(`-mllvm -Arkari-cfg="配置文件路径|Your config path"`) (Win64-MT-20.1.7-obf1.7.0 or later)
+ - 或直接通过配置文件管理(`-mllvm -arkari-cfg="配置文件路径|Your config path"`) (Win64-MT-20.1.7-obf1.7.0 or later)
 
 对比于goron的改进：
  - 由于作者明确表示暂时(至少几万年吧)不会跟进llvm版本和不会继续更新. 所以有了这个版本(https://github.com/amimo/goron/issues/29)
@@ -53,37 +53,88 @@
  - 修复了x86间接调用炸堆栈的问题
  - ...
  ```
-## 编译
-
- - Windows(use Ninja, Ninja YYDS):
-```
-install ninja in your PATH
-run x64(86) Native Tools Command Prompt for VS 2022(xx)
-run:
-
-mkdir build_ninja
-cd build_ninja
-cmake -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_PREFIX="./install" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" -G "Ninja" ../llvm
-ninja
-ninja install
+## 生成VS2026开发调试环境项目(X86+AArch64 Target)
+ - Windows + Visual Studio 18 2026 + vcpkg
 
 ```
-
- - Windows with cmake for using clang(use Ninja, With vcpkg for libxml2 libLZMA, zlib ):
-```
-install ninja in your PATH
-run x64 Native Tools Command Prompt for VS 2022
-run:
+install vcpkg and set VCPKG_ROOT PATH
 
 vcpkg install zlib:x64-windows-static
 vcpkg install libLZMA:x64-windows-static
 vcpkg install libxml2:x64-windows-static
 
+run x64 Native Tools Command Prompt for VS
+run:
+
 mkdir build_ninja
 cd build_ninja
 
-Replace "YOUR_VCPKG_TOOLCHAIN_FILE" to your vcpkg toolchain file (You can query it for command "vcpkg integrate install"):
-cmake -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_PREFIX="./install" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" -DLLVM_BUILD_TOOLS=ON -DLLVM_ENABLE_LIBXML2=ON -DCMAKE_TOOLCHAIN_FILE=YOUR_VCPKG_TOOLCHAIN_FILE -DVCPKG_TARGET_TRIPLET="x64-windows-static" -G "Ninja" ../llvm
+cmake -DCMAKE_CXX_FLAGS="/utf-8 /EHsc" ^
+      -DCMAKE_C_FLAGS="/utf-8" ^
+      -DCMAKE_INSTALL_PREFIX="./install" ^
+      -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+      -DCMAKE_BUILD_TYPE=Debug ^
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld;lldb" ^
+      -DLLVM_TARGETS_TO_BUILD="X86;AArch64" ^
+      -DLLVM_ENABLE_RUNTIMES="compiler-rt;openmp" ^
+      -DCOMPILER_RT_BUILD_ORC=OFF ^
+      -DLLVM_BUILD_LLVM_C_DYLIB=ON ^
+      -DPython3_FIND_REGISTRY=NEVER ^
+      -DLLVM_BUILD_TOOLS=ON ^
+      -DLLVM_ENABLE_LIBXML2=FORCE_ON ^
+      -DCLANG_ENABLE_LIBXML2=OFF ^
+      -DLLVM_ENABLE_RPMALLOC=OFF ^
+      -DLLVM_INCLUDE_TESTS=OFF ^
+      -DLLVM_INCLUDE_EXAMPLES=OFF ^
+      -DLLVM_INCLUDE_BENCHMARKS=OFF ^
+      -DLLVM_ENABLE_ASSERTIONS=ON ^
+      -DLLVM_RELEASE_ENABLE_LTO=OFF ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET="x64-windows-static" ^
+      -G "Visual Studio 18 2026" ^
+      ../llvm
+```
+## 编译(x64 runtime with X86+AArch64 Target)
+
+ - Windows + Visual Studio 18 2026 + ninja + vcpkg for libxml2, libLZMA, zlib
+```
+install ninja in your PATH
+install vcpkg and set VCPKG_ROOT PATH
+
+vcpkg install zlib:x64-windows-static
+vcpkg install libLZMA:x64-windows-static
+vcpkg install libxml2:x64-windows-static
+
+run x64 Native Tools Command Prompt for VS
+run:
+
+mkdir build_ninja
+cd build_ninja
+
+cmake -DCMAKE_CXX_FLAGS="-DLIBXML_STATIC /utf-8 /EHsc" ^
+      -DCMAKE_C_FLAGS="-DLIBXML_STATIC /utf-8" ^
+      -DCMAKE_INSTALL_PREFIX="./install" ^
+      -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld;lldb" ^
+      -DLLVM_TARGETS_TO_BUILD="X86;AArch64" ^
+      -DLLVM_ENABLE_RUNTIMES="compiler-rt;openmp" ^
+      -DCOMPILER_RT_BUILD_ORC=OFF ^
+      -DLLVM_BUILD_LLVM_C_DYLIB=ON ^
+      -DPython3_FIND_REGISTRY=NEVER ^
+      -DLLVM_BUILD_TOOLS=ON ^
+      -DLLVM_ENABLE_LIBXML2=FORCE_ON ^
+      -DCLANG_ENABLE_LIBXML2=OFF ^
+      -DLLVM_ENABLE_RPMALLOC=ON ^
+      -DLLVM_INCLUDE_TESTS=OFF ^
+      -DLLVM_INCLUDE_EXAMPLES=OFF ^
+      -DLLVM_INCLUDE_BENCHMARKS=OFF ^
+      -DLLVM_ENABLE_ASSERTIONS=OFF ^
+      -DLLVM_RELEASE_ENABLE_LTO=OFF ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET="x64-windows-static" ^
+      -G "Ninja" ^
+      ../llvm
 
 ninja
 ninja install
@@ -190,7 +241,7 @@ Eg.间接函数调用,并加密目标函数地址,强度设置为3(`-mllvm -irob
 ## 通过配置文件管理混淆参数
 (Win64-MT-20.1.7-obf1.7.0 or later)
 
-编译参数加上：`-mllvm -Arkari-cfg="配置文件路径|Your config path"` 
+编译参数加上：`-mllvm -arkari-cfg="配置文件路径|Your config path"` 
 
 路径可以是绝对路径，或者相对于编译器工作目录的相对路径
 
@@ -263,4 +314,4 @@ Thanks to [JetBrains](https://www.jetbrains.com/?from=KomiMoe) for providing fre
 2. 本项目获取部分项目授权而不受部分约束
 2. 项目其余逻辑代码采用[本仓库开源许可](./LICENSE).
 
-**本仓库仅用于提升用户对自身代码的保护能力，实现代码逻辑混淆加密的功能，禁止任何项目未经仓库主作者授权基于 KomiMoe/Arkari 代码开发。使用请遵守当地法律法规，由此造成的问题由使用者和提供违规使用教程者负责。**
+**本仓库仅用于提升用户对自身代码的保护能力，实现代码逻辑混淆加密的功能，禁止任何项目未经仓库主作者授权基于 komimoe/Arkari 代码开发。使用请遵守当地法律法规，由此造成的问题由使用者和提供违规使用教程者负责。**

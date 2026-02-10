@@ -1,4 +1,4 @@
-<h1 align="center">Samsara</h1>
+<h1 align="center">Arkari</h1>
 <h2 align="center">Formerly Known As: Arkari/Hikari </h2>
 
 <h3 align="center">
@@ -8,17 +8,17 @@
 </h3>
 
 <p align="center">
- <a href="https://github.com/komimoe/Samsara/issues">
-  <img src="https://img.shields.io/github/issues/komimoe/samsara?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
+ <a href="https://github.com/komimoe/Arkari/issues">
+  <img src="https://img.shields.io/github/issues/komimoe/Arkari?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
  </a>
- <a href="https://github.com/komimoe/Samsara/network/members">
-  <img src="https://img.shields.io/github/forks/komimoe/samsara?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
+ <a href="https://github.com/komimoe/Arkari/network/members">
+  <img src="https://img.shields.io/github/forks/komimoe/Arkari?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
  </a>  
- <a href="https://github.com/komimoe/Samsara/stargazers">
-  <img src="https://img.shields.io/github/stars/komimoe/samsara?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
+ <a href="https://github.com/komimoe/Arkari/stargazers">
+  <img src="https://img.shields.io/github/stars/komimoe/Arkari?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
  </a>
- <a href="https://github.com/komimoe/Samsara/LICENSE">
-  <img src="https://img.shields.io/github/license/komimoe/samsara?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
+ <a href="https://github.com/komimoe/Arkari/LICENSE">
+  <img src="https://img.shields.io/github/license/komimoe/Arkari?colorA=363a4f&colorB=e6b2cc&style=for-the-badge"/> 
  </a>
 </p>
 <h3 align="center">Yet another LLVM-based obfuscator based on Goron</h3>
@@ -35,7 +35,7 @@ Currently supported features:
  - Floating-point constant encryption (`-mllvm -irobf-cfe`) (Win64-MT-19.1.3-obf1.6.0 or later)
  - Microsoft CXXABI RTTI Name Eraser (Experimental feature!) [Requires specifying configuration file path and `randomSeed` field in the configuration file (32 bytes, padded with 0 if shorter, truncated if longer)] (`-mllvm -irobf-rtti`) (Win64-MT-20.1.7-obf1.7.0 or later)
  - All features (`-mllvm -irobf-indbr -mllvm -irobf-icall -mllvm -irobf-indgv -mllvm -irobf-cse -mllvm -irobf-cff -mllvm -irobf-cie -mllvm -irobf-cfe -mllvm -irobf-rtti`)
- - Or manage directly via configuration file (`-mllvm -samsara-cfg="Configuration file path|Your config path"`) (Win64-MT-20.1.7-obf1.7.0 or later)
+ - Or manage directly via configuration file (`-mllvm -arkari-cfg="Configuration file path|Your config path"`) (Win64-MT-20.1.7-obf1.7.0 or later)
 
 Improvements over Goron:
  - As the original author has explicitly stated that they will not update the LLVM version or continue development for the time being (at least for tens of thousands of years), this version was created (https://github.com/amimo/goron/issues/29)
@@ -50,39 +50,95 @@ Improvements over Goron:
  - ...
  ```
 
-## Compilation
+## Generate Visual Studio 2026 Debug proj(X86+AArch64 Target):
 
-- Windows (using Ninja, Ninja is the best):
-```
-Install Ninja in your PATH
-Run x64(x86) Native Tools Command Prompt for VS 2022(xx)
-Run:
+- Windows + Visual Studio 18 2026 + vcpkg
 
-mkdir build_ninja
-cd build_ninja
-cmake -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_PREFIX="./install" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" -G "Ninja" ../llvm
-ninja
-ninja install
 ```
-
-- Windows with CMake for using Clang (using Ninja, with vcpkg for libxml2, libLZMA, zlib):
-```
-Install Ninja in your PATH
-Run x64 Native Tools Command Prompt for VS 2022
-Run:
+install vcpkg and set VCPKG_ROOT PATH
 
 vcpkg install zlib:x64-windows-static
 vcpkg install libLZMA:x64-windows-static
 vcpkg install libxml2:x64-windows-static
 
+run x64 Native Tools Command Prompt for VS
+run:
+
 mkdir build_ninja
 cd build_ninja
 
-Replace "YOUR_VCPKG_TOOLCHAIN_FILE" with your vcpkg toolchain file (You can query it with the command "vcpkg integrate install"):
-cmake -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_PREFIX="./install" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" -DLLVM_BUILD_TOOLS=ON -DLLVM_ENABLE_LIBXML2=ON -DCMAKE_TOOLCHAIN_FILE=YOUR_VCPKG_TOOLCHAIN_FILE -DVCPKG_TARGET_TRIPLET="x64-windows-static" -G "Ninja" ../llvm
+cmake -DCMAKE_CXX_FLAGS="/utf-8 /EHsc" ^
+      -DCMAKE_C_FLAGS="/utf-8" ^
+      -DCMAKE_INSTALL_PREFIX="./install" ^
+      -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+      -DCMAKE_BUILD_TYPE=Debug ^
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld;lldb" ^
+      -DLLVM_TARGETS_TO_BUILD="X86;AArch64" ^
+      -DLLVM_ENABLE_RUNTIMES="compiler-rt;openmp" ^
+      -DCOMPILER_RT_BUILD_ORC=OFF ^
+      -DLLVM_BUILD_LLVM_C_DYLIB=ON ^
+      -DPython3_FIND_REGISTRY=NEVER ^
+      -DLLVM_BUILD_TOOLS=ON ^
+      -DLLVM_ENABLE_LIBXML2=FORCE_ON ^
+      -DCLANG_ENABLE_LIBXML2=OFF ^
+      -DLLVM_ENABLE_RPMALLOC=OFF ^
+      -DLLVM_INCLUDE_TESTS=OFF ^
+      -DLLVM_INCLUDE_EXAMPLES=OFF ^
+      -DLLVM_INCLUDE_BENCHMARKS=OFF ^
+      -DLLVM_ENABLE_ASSERTIONS=ON ^
+      -DLLVM_RELEASE_ENABLE_LTO=OFF ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET="x64-windows-static" ^
+      -G "Visual Studio 18 2026" ^
+      ../llvm
+```
+
+## Compilation(x64 runtime with X86+AArch64 Target)
+
+- Windows + Visual Studio 18 2026 + ninja + vcpkg for libxml2, libLZMA, zlib
+
+```
+install ninja in your PATH
+install vcpkg and set VCPKG_ROOT PATH
+
+vcpkg install zlib:x64-windows-static
+vcpkg install libLZMA:x64-windows-static
+vcpkg install libxml2:x64-windows-static
+
+run x64 Native Tools Command Prompt for VS
+run:
+
+mkdir build_ninja
+cd build_ninja
+
+cmake -DCMAKE_CXX_FLAGS="-DLIBXML_STATIC /utf-8 /EHsc" ^
+      -DCMAKE_C_FLAGS="-DLIBXML_STATIC /utf-8" ^
+      -DCMAKE_INSTALL_PREFIX="./install" ^
+      -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld;lldb" ^
+      -DLLVM_TARGETS_TO_BUILD="X86;AArch64" ^
+      -DLLVM_ENABLE_RUNTIMES="compiler-rt;openmp" ^
+      -DCOMPILER_RT_BUILD_ORC=OFF ^
+      -DLLVM_BUILD_LLVM_C_DYLIB=ON ^
+      -DPython3_FIND_REGISTRY=NEVER ^
+      -DLLVM_BUILD_TOOLS=ON ^
+      -DLLVM_ENABLE_LIBXML2=FORCE_ON ^
+      -DCLANG_ENABLE_LIBXML2=OFF ^
+      -DLLVM_ENABLE_RPMALLOC=ON ^
+      -DLLVM_INCLUDE_TESTS=OFF ^
+      -DLLVM_INCLUDE_EXAMPLES=OFF ^
+      -DLLVM_INCLUDE_BENCHMARKS=OFF ^
+      -DLLVM_ENABLE_ASSERTIONS=OFF ^
+      -DLLVM_RELEASE_ENABLE_LTO=OFF ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET="x64-windows-static" ^
+      -G "Ninja" ^
+      ../llvm
 
 ninja
 ninja install
+
 ```
 
 ## Usage
@@ -184,7 +240,7 @@ E.g., indirect function calls with encrypted target function addresses, intensit
 ## Manage Obfuscation Parameters via Configuration File
 (Win64-MT-20.1.7-obf1.7.0 or later)
 
-Add to compilation parameters: `-mllvm -samsara-cfg="Configuration file path|Your config path"`
+Add to compilation parameters: `-mllvm -arkari-cfg="Configuration file path|Your config path"`
 
 The path can be absolute or relative to the compiler's working directory.
 
@@ -234,11 +290,11 @@ Thanks to [JetBrains](https://www.jetbrains.com/?from=KomiMoe) for providing fre
 
 ## Star History
 
-<a href="https://www.star-history.com/#KomiMoe/Samsara&Date">
+<a href="https://www.star-history.com/#komimoe/Arkari&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=KomiMoe/Samsara&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=KomiMoe/Samsara&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=KomiMoe/Samsara&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=komimoe/Arkari&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=komimoe/Arkari&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=komimoe/Arkari&type=Date" />
  </picture>
 </a>
 
@@ -254,4 +310,4 @@ This project is open-sourced under a mixed license, so please note the following
 2. This project has obtained partial project authorization and is not subject to certain constraints.
 3. The remaining logic code of the project adopts the [license of this repository](./LICENSE).
 
-**This repository is solely for enhancing users' ability to protect their code by implementing code logic obfuscation and encryption. Unauthorized development based on KomiMoe/Samsara code is prohibited without the repository owner's permission. Please comply with local laws and regulations when using this project. Any issues arising from usage are the responsibility of the user and those providing tutorials for improper use.**
+**This repository is solely for enhancing users' ability to protect their code by implementing code logic obfuscation and encryption. Unauthorized development based on KomiMoe/Arkari code is prohibited without the repository owner's permission. Please comply with local laws and regulations when using this project. Any issues arising from usage are the responsibility of the user and those providing tutorials for improper use.**
