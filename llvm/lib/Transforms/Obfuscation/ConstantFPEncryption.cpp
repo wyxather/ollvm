@@ -93,7 +93,7 @@ struct ConstantFPEncryption : public FunctionPass {
       return false;
     }
     auto& FuncModifyIRs = FunctionModifyIRs[&F];
-    if (FunctionModifyIRs.empty()) {
+    if (FuncModifyIRs.empty()) {
       return false;
     }
 

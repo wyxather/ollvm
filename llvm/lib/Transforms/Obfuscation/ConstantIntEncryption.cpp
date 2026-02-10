@@ -1,4 +1,4 @@
-#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
+﻿#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/ConstantIntEncryption.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -94,7 +94,7 @@ struct ConstantIntEncryption : public FunctionPass {
       return false;
     }
     auto& FuncModifyIRs = FunctionModifyIRs[&F];
-    if (FunctionModifyIRs.empty()) {
+    if (FuncModifyIRs.empty()) {
       return false;
     }
 
