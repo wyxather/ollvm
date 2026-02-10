@@ -1,4 +1,4 @@
-#include "llvm/Transforms/Obfuscation/Utils.h"
+﻿#include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IRBuilder.h"
@@ -217,13 +217,13 @@ void createPageTable(const CreatePageTableArgs &args) {
   std::vector<Constant *> GVObjects;
   for (unsigned i = 0; i < args.Objects->size(); ++i) {
     auto Obj = args.Objects->at(i);
-    GVObjects.push_back(ConstantExpr::getBitCast(Obj, PointerType::getUnqual(Ctx)));
+    GVObjects.push_back(Obj);
     args.IndexMap->insert_or_assign(Obj, i);
   }
 
   {
     auto GVNameObjects(args.GVNamePrefix + "_objects");
-    auto ATy = ArrayType::get(GVObjects[0]->getType(), GVObjects.size());
+    auto ATy = ArrayType::get(PointerType::getUnqual(Ctx), GVObjects.size());
     auto CA = ConstantArray::get(ATy, ArrayRef(GVObjects));
     auto GV = new GlobalVariable(*args.M, ATy, false, 
                                  GlobalValue::LinkageTypes::InternalLinkage,
@@ -425,11 +425,11 @@ Value *encryptConstant(Constant *plainConstant, Instruction *insertBefore,
       IntegerType::get(Ctx, BitWidth),
       rng());
 
-  const auto ConstantInt = ConstantExpr::getBitCast(plainConstant, Key->getType());
-  auto Enc = ConstantExpr::getSub(ConstantInt, Key);
+  const auto PlainCast = ConstantExpr::getBitCast(plainConstant, Key->getType());
+  auto Enc = ConstantExpr::getSub(PlainCast, Key);
   Constant *XorKey = nullptr;
   if (level) {
-    XorKey = ConstantInt::get(Key->getType(), rng());
+    XorKey = llvm::ConstantInt::get(Key->getType(), rng());
     Enc = ConstantExpr::getXor(Enc, XorKey);
     if (level > 1) {
       Enc = ConstantExpr::getXor(Enc, ConstantExpr::get(Instruction::Add, XorKey, Key));
