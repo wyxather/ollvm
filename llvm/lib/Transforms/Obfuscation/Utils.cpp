@@ -206,6 +206,36 @@ void maskCipher(uint8_t mask, APInt &preIndex, uint64_t objKey, unsigned newInde
   case 5:
     preIndex = preIndex.rotr(static_cast<unsigned>(objKey - newIndex));
     break;
+  case 6:
+    preIndex += objKey;
+    break;
+  case 7:
+    preIndex -= objKey;
+    break;
+  case 8:
+    preIndex = preIndex.reverseBits();
+    break;
+  case 9:
+    preIndex ^= (objKey + newIndex);
+    break;
+  case 10:
+    preIndex ^= ~objKey;
+    break;
+  case 11:
+    preIndex ^= (objKey - newIndex);
+    break;
+  case 12:
+    preIndex ^= (objKey * newIndex);
+    break;
+  case 13:
+    preIndex += newIndex;
+    break;
+  case 14:
+    preIndex -= newIndex;
+    break;
+  case 15:
+    preIndex = preIndex.rotl(static_cast<unsigned>(objKey));
+    break;
   default:
     preIndex = preIndex ^ objKey;
     break;
@@ -249,7 +279,7 @@ for (unsigned i = 0; i < args.CountLoop; ++i) {
 
     APInt preIndex(BitWidth, args.IndexMap->at(Obj));
     for (unsigned k = 0; k < 8; ++k) {
-      const auto mask = static_cast<uint8_t>(ObjMask >> (k * 3)) % 6u;
+      const auto mask = static_cast<uint8_t>(ObjMask >> (k * 4)) % 16u;
       maskCipher(mask, preIndex, ObjFullKey, j);
     }
     auto toWriteData = ConstantInt::get(IntTy, preIndex);
@@ -291,7 +321,7 @@ void enhancedPageTable(const CreatePageTableArgs &args, DenseMap<Constant *, uns
                            FuncIndexMap->at(Obj));
 
       for (unsigned k = 0; k < 4 * args.CountLoop; ++k) {
-        const auto mask = static_cast<uint8_t>(ObjMask >> (k * 2)) % 6u;
+        const auto mask = static_cast<uint8_t>(ObjMask >> (k * 4)) % 16u;
         maskCipher(mask, preIndex, ObjFullKey, j);
       }
       auto toWriteData = ConstantInt::get(IntTy, preIndex);
@@ -351,7 +381,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
         {NextIndex});
       break;
     case 4:
-      // preIndex.flipAllBits();
+      // preIndex = ~preIndex;
       NextIndex = IRB.CreateNot(NextIndex);
       break;
     case 5:
@@ -359,6 +389,50 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       NextIndex = IRB.CreateCall(
         Intrinsic::getOrInsertDeclaration(M, Intrinsic::fshl, {NextIndex->getType()}),
         {NextIndex, NextIndex, IRB.CreateSub(ObjKey, PrevIndex)});
+      break;
+    case 6:
+      // preIndex += objKey;
+      NextIndex = IRB.CreateSub(NextIndex, ObjKey);
+      break;
+    case 7:
+      // preIndex -= objKey;
+      NextIndex = IRB.CreateAdd(NextIndex, ObjKey);
+      break;
+    case 8:
+      // preIndex = preIndex.reverseBits();
+      NextIndex = IRB.CreateCall(
+        Intrinsic::getOrInsertDeclaration(M, Intrinsic::bitreverse, {NextIndex->getType()}),
+        {NextIndex});
+      break;
+    case 9:
+      // preIndex ^= (objKey + newIndex);
+      NextIndex = IRB.CreateXor(NextIndex, IRB.CreateAdd(ObjKey, PrevIndex));
+      break;
+    case 10:
+      // preIndex ^= ~objKey;
+      NextIndex = IRB.CreateXor(NextIndex, IRB.CreateNot(ObjKey));
+      break;
+    case 11:
+      // preIndex ^= (objKey - newIndex);
+      NextIndex = IRB.CreateXor(NextIndex, IRB.CreateSub(ObjKey, PrevIndex));
+      break;
+    case 12:
+      // preIndex ^= (objKey * newIndex);
+      NextIndex = IRB.CreateXor(NextIndex, IRB.CreateMul(ObjKey, PrevIndex));
+      break;
+    case 13:
+      // preIndex += newIndex;
+      NextIndex = IRB.CreateSub(NextIndex, PrevIndex);
+      break;
+    case 14:
+      // preIndex -= newIndex;
+      NextIndex = IRB.CreateAdd(NextIndex, PrevIndex);
+      break;
+    case 15:
+      // preIndex = rotl(preIndex, objKey);
+      NextIndex = IRB.CreateCall(
+        Intrinsic::getOrInsertDeclaration(M, Intrinsic::fshr, {NextIndex->getType()}),
+        {NextIndex, NextIndex, ObjKey});
       break;
     default:
       // preIndex = preIndex ^ ObjKey;
@@ -380,7 +454,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       NextIndex = IRB.CreateLoad(IntTy, GEP);
       SmallVector<uint8_t, 16> maskIndex;
       for (unsigned j = 0; j < 4 * args.FuncLoopCount; ++j) {
-        auto mask = static_cast<uint8_t>(FuncMask >> (j * 2)) % 6u;
+        auto mask = static_cast<uint8_t>(FuncMask >> (j * 4)) % 16u;
         maskIndex.push_back(mask);
       }
       for (int j = maskIndex.size() - 1; j >= 0; --j) {
@@ -401,7 +475,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       NextIndex = IRB.CreateLoad(IntTy, GEP);
       SmallVector<uint8_t, 16> maskIndex;
       for (unsigned j = 0; j < 8; ++j) {
-        auto mask = static_cast<uint8_t>(ModuleMask >> (j * 3)) % 6u;
+        auto mask = static_cast<uint8_t>(ModuleMask >> (j * 4)) % 16u;
         maskIndex.push_back(mask);
       }
       for (int j = maskIndex.size() - 1; j >= 0; --j) {
