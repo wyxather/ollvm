@@ -94,9 +94,9 @@ cmake -DCMAKE_CXX_FLAGS="/utf-8 /EHsc" ^
       -G "Visual Studio 18 2026" ^
       ../llvm
 ```
-## 编译(x64 runtime with X86+AArch64 Target)
+## 编译(Windows x64 runtime with X86+AArch64 Target)
 
- - Windows + Visual Studio 18 2026 + ninja + vcpkg for libxml2, libLZMA, zlib
+- Windows + Visual Studio 18 2026 + ninja + vcpkg for libxml2, libLZMA, zlib
 ```
 install ninja in your PATH
 install vcpkg and set VCPKG_ROOT PATH
@@ -139,6 +139,33 @@ cmake -DCMAKE_CXX_FLAGS="-DLIBXML_STATIC /utf-8 /EHsc" ^
 ninja
 ninja install
 
+```
+
+## 编译(macOS AArch64 runtime with AArch64+X86 Target)
+- macOS + XCode Command Tools + brew + ninja
+```
+xcode-select --install
+brew install ninja
+
+cmake -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="./install" \
+  -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld;lldb" \
+  -DLLVM_TARGETS_TO_BUILD="AArch64;X86" \
+  -DLLVM_ENABLE_RUNTIMES="compiler-rt;openmp" \
+  -DCOMPILER_RT_BUILD_ORC=OFF \
+  -DLLVM_BUILD_LLVM_C_DYLIB=ON \
+  -DLLVM_BUILD_TOOLS=ON \
+  -DLLVM_INCLUDE_TESTS=OFF \
+  -DLLVM_INCLUDE_EXAMPLES=OFF \
+  -DLLVM_INCLUDE_BENCHMARKS=OFF \
+  -DLLVM_ENABLE_ASSERTIONS=OFF \
+  -DLLVM_RELEASE_ENABLE_LTO=OFF \
+  -DLLVM_RELEASE_ENABLE_PGO=OFF \
+  ../llvm
+
+ninja
+ninja install
 ```
 
 ## 使用

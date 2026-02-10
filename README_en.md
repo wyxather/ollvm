@@ -141,6 +141,33 @@ ninja install
 
 ```
 
+## Compilation(macOS AArch64 runtime with AArch64+X86 Target)
+- macOS + XCode Command Tools + brew + ninja
+```
+xcode-select --install
+brew install ninja
+
+cmake -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="./install" \
+  -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld;lldb" \
+  -DLLVM_TARGETS_TO_BUILD="AArch64;X86" \
+  -DLLVM_ENABLE_RUNTIMES="compiler-rt;openmp" \
+  -DCOMPILER_RT_BUILD_ORC=OFF \
+  -DLLVM_BUILD_LLVM_C_DYLIB=ON \
+  -DLLVM_BUILD_TOOLS=ON \
+  -DLLVM_INCLUDE_TESTS=OFF \
+  -DLLVM_INCLUDE_EXAMPLES=OFF \
+  -DLLVM_INCLUDE_BENCHMARKS=OFF \
+  -DLLVM_ENABLE_ASSERTIONS=OFF \
+  -DLLVM_RELEASE_ENABLE_LTO=OFF \
+  -DLLVM_RELEASE_ENABLE_PGO=OFF \
+  ../llvm
+
+ninja
+ninja install
+```
+
 ## Usage
 Enable specific obfuscation features through compilation options, e.g., to enable indirect jump obfuscation:
 
