@@ -1,4 +1,4 @@
-﻿#include "llvm/Transforms/Obfuscation/Utils.h"
+#include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IRBuilder.h"
@@ -212,9 +212,14 @@ void maskCipher(uint8_t mask, APInt &preIndex, uint64_t objKey, unsigned newInde
   case 7:
     preIndex -= objKey;
     break;
-  case 8:
-    preIndex = preIndex.reverseBits();
+  case 8: {
+    unsigned Half = preIndex.getBitWidth() / 2;
+    APInt Mask = APInt::getLowBitsSet(preIndex.getBitWidth(), Half);
+    APInt Hi = preIndex.lshr(Half) & Mask;
+    APInt Lo = preIndex & Mask;
+    preIndex = (Hi << Half) | (Hi ^ Lo);
     break;
+  }
   case 9:
     preIndex ^= (objKey + newIndex);
     break;
@@ -401,12 +406,17 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       // preIndex -= objKey;
       NextIndex = IRB.CreateAdd(NextIndex, ObjKey);
       break;
-    case 8:
-      // preIndex = preIndex.reverseBits();
-      NextIndex = IRB.CreateCall(
-        Intrinsic::getOrInsertDeclaration(M, Intrinsic::bitreverse, {NextIndex->getType()}),
-        {NextIndex});
+    case 8: {
+      // Self-inverse half-swap XOR: (Hi, Lo) -> (Hi, Hi^Lo)
+      auto *ITy = cast<IntegerType>(NextIndex->getType());
+      unsigned Half = ITy->getBitWidth() / 2;
+      auto *HalfShift = ConstantInt::get(ITy, Half);
+      auto *HalfMask = ConstantInt::get(ITy, APInt::getLowBitsSet(ITy->getBitWidth(), Half));
+      auto *Hi = IRB.CreateAnd(IRB.CreateLShr(NextIndex, HalfShift), HalfMask);
+      auto *Lo = IRB.CreateAnd(NextIndex, HalfMask);
+      NextIndex = IRB.CreateOr(IRB.CreateShl(Hi, HalfShift), IRB.CreateXor(Hi, Lo));
       break;
+    }
     case 9:
       // preIndex ^= (objKey + newIndex);
       NextIndex = IRB.CreateXor(NextIndex, IRB.CreateAdd(ObjKey, PrevIndex));
