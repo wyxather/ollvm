@@ -184,13 +184,18 @@ bool expandConstantExpr(Function &F) {
   return Changed;
 }
 
-void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newIndex) {
+IntegerType *getPageTableIntTy(Module &M) {
+  return IntegerType::get(M.getContext(),
+                          M.getDataLayout().getPointerSizeInBits());
+}
+
+void maskCipher(uint8_t mask, APInt &preIndex, uint64_t objKey, unsigned newIndex) {
   switch (mask) {
   case 1:
     preIndex = -preIndex;
     break;
   case 2:
-    preIndex = preIndex.rotl(objKey + newIndex);
+    preIndex = preIndex.rotl(static_cast<unsigned>(objKey + newIndex));
     break;
   case 3:
     preIndex = preIndex.byteSwap();
@@ -199,7 +204,7 @@ void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newInde
     preIndex = ~preIndex;
     break;
   case 5:
-    preIndex = preIndex.rotr(objKey - newIndex);
+    preIndex = preIndex.rotr(static_cast<unsigned>(objKey - newIndex));
     break;
   default:
     preIndex = preIndex ^ objKey;
@@ -208,67 +213,68 @@ void maskCipher(uint8_t mask, APInt &preIndex, unsigned objKey, unsigned newInde
 }
 
 void createPageTable(const CreatePageTableArgs &args) {
-  auto& Ctx = args.M->getContext();
-  const auto Int32Ty = IntegerType::getInt32Ty(Ctx);
+auto *IntTy = getPageTableIntTy(*args.M);
+const unsigned BitWidth = IntTy->getBitWidth();
+auto& Ctx = args.M->getContext();
 
-  std::mt19937_64 re(args.RNG->operator()());
+std::mt19937_64 re(args.RNG->operator()());
+std::shuffle(args.Objects->begin(), args.Objects->end(), re);
+
+std::vector<Constant *> GVObjects;
+for (unsigned i = 0; i < args.Objects->size(); ++i) {
+  auto Obj = args.Objects->at(i);
+  GVObjects.push_back(Obj);
+  args.IndexMap->insert_or_assign(Obj, i);
+}
+
+{
+  auto GVNameObjects(args.GVNamePrefix + "_objects");
+  auto ATy = ArrayType::get(PointerType::getUnqual(Ctx), GVObjects.size());
+  auto CA = ConstantArray::get(ATy, ArrayRef(GVObjects));
+  auto GV = new GlobalVariable(*args.M, ATy, false, 
+                               GlobalValue::LinkageTypes::InternalLinkage,
+                               CA, GVNameObjects);
+  GV->addMetadata("noobf", *MDNode::get(args.M->getContext(), {}));
+  args.OutPageTable->push_back(GV);
+}
+
+for (unsigned i = 0; i < args.CountLoop; ++i) {
   std::shuffle(args.Objects->begin(), args.Objects->end(), re);
 
-  std::vector<Constant *> GVObjects;
-  for (unsigned i = 0; i < args.Objects->size(); ++i) {
-    auto Obj = args.Objects->at(i);
-    GVObjects.push_back(Obj);
-    args.IndexMap->insert_or_assign(Obj, i);
+  std::vector<Constant *> ConstantObjectIndex;
+  for (unsigned j = 0; j < args.Objects->size(); ++j) {
+    const auto Obj = args.Objects->at(j);
+    const auto ObjFullKey = args.ObjectKeys->at(Obj);
+    const auto ObjMask = static_cast<uint32_t>(ObjFullKey >> 32);
+
+    APInt preIndex(BitWidth, args.IndexMap->at(Obj));
+    for (unsigned k = 0; k < 8; ++k) {
+      const auto mask = static_cast<uint8_t>(ObjMask >> (k * 3)) % 6u;
+      maskCipher(mask, preIndex, ObjFullKey, j);
+    }
+    auto toWriteData = ConstantInt::get(IntTy, preIndex);
+    ConstantObjectIndex.push_back(toWriteData);
+    args.IndexMap->insert_or_assign(Obj, j);
   }
 
   {
-    auto GVNameObjects(args.GVNamePrefix + "_objects");
-    auto ATy = ArrayType::get(PointerType::getUnqual(Ctx), GVObjects.size());
-    auto CA = ConstantArray::get(ATy, ArrayRef(GVObjects));
-    auto GV = new GlobalVariable(*args.M, ATy, false, 
+
+    auto GVNameObjPageTable(args.GVNamePrefix + "_page_table_" + std::to_string(i));
+    auto IATy = ArrayType::get(IntTy, ConstantObjectIndex.size());
+    auto IA = ConstantArray::get(IATy, ArrayRef(ConstantObjectIndex));
+    auto GV = new GlobalVariable(*args.M, IATy, true,
                                  GlobalValue::LinkageTypes::InternalLinkage,
-                                 CA, GVNameObjects);
+                                 IA, GVNameObjPageTable);
     GV->addMetadata("noobf", *MDNode::get(args.M->getContext(), {}));
     args.OutPageTable->push_back(GV);
   }
-
-  for (unsigned i = 0; i < args.CountLoop; ++i) {
-    std::shuffle(args.Objects->begin(), args.Objects->end(), re);
-
-    std::vector<Constant *> ConstantObjectIndex;
-    for (unsigned j = 0; j < args.Objects->size(); ++j) {
-      const auto Obj = args.Objects->at(j);
-      const auto ObjFullKey = args.ObjectKeys->at(Obj);
-      const auto ObjKey = static_cast<uint32_t>(ObjFullKey);
-      const auto ObjMask = static_cast<uint32_t>(ObjFullKey >> 32);
-
-      APInt preIndex(32, args.IndexMap->at(Obj));
-      for (unsigned k = 0; k < 8; ++k) {
-        const auto mask = static_cast<uint8_t>(ObjMask >> (k * 3)) % 6u;
-        maskCipher(mask, preIndex, ObjKey, j);
-      }
-      auto toWriteData = ConstantInt::get(Int32Ty, preIndex);
-      ConstantObjectIndex.push_back(toWriteData);
-      args.IndexMap->insert_or_assign(Obj, j);
-    }
-
-    {
-
-      auto GVNameObjPageTable(args.GVNamePrefix + "_page_table_" + std::to_string(i));
-      auto IATy = ArrayType::get(Int32Ty, ConstantObjectIndex.size());
-      auto IA = ConstantArray::get(IATy, ArrayRef(ConstantObjectIndex));
-      auto GV = new GlobalVariable(*args.M, IATy, false,
-                                   GlobalValue::LinkageTypes::InternalLinkage,
-                                   IA, GVNameObjPageTable);
-      GV->addMetadata("noobf", *MDNode::get(args.M->getContext(), {}));
-      args.OutPageTable->push_back(GV);
-    }
   }
 
 }
 
 void enhancedPageTable(const CreatePageTableArgs &args, DenseMap<Constant *, unsigned> *FuncIndexMap) {
-  const auto Int32Ty = IntegerType::getInt32Ty(args.M->getContext());
+  auto *IntTy = getPageTableIntTy(*args.M);
+  const unsigned BitWidth = IntTy->getBitWidth();
 
   std::mt19937_64 re(args.RNG->operator()());
 
@@ -278,27 +284,27 @@ void enhancedPageTable(const CreatePageTableArgs &args, DenseMap<Constant *, uns
     for (unsigned j = 0; j < args.Objects->size(); ++j) {
       auto Obj = args.Objects->at(j);
       const auto ObjFullKey = args.ObjectKeys->at(Obj);
-      const auto ObjKey = static_cast<uint32_t>(ObjFullKey);
       const auto ObjMask = static_cast<uint32_t>(ObjFullKey >> 32);
 
-      APInt preIndex(32, FuncIndexMap->find(Obj) == FuncIndexMap->end() ?
+      APInt preIndex(BitWidth, FuncIndexMap->find(Obj) == FuncIndexMap->end() ?
                            args.IndexMap->at(Obj) :
                            FuncIndexMap->at(Obj));
 
       for (unsigned k = 0; k < 4 * args.CountLoop; ++k) {
         const auto mask = static_cast<uint8_t>(ObjMask >> (k * 2)) % 6u;
-        maskCipher(mask, preIndex, ObjKey, j);
+        maskCipher(mask, preIndex, ObjFullKey, j);
       }
-      auto toWriteData = ConstantInt::get(Int32Ty, preIndex);
+      auto toWriteData = ConstantInt::get(IntTy, preIndex);
       ConstantObjectIndex.push_back(toWriteData);
       FuncIndexMap->insert_or_assign(Obj, j);
     }
 
     {
       auto GVNameObjPage(args.GVNamePrefix + "_enhanced_page_table_" + std::to_string(i));
-      auto IATy = ArrayType::get(Int32Ty, ConstantObjectIndex.size());
+      auto IATy = ArrayType::get(IntTy, ConstantObjectIndex.size());
       auto IA = ConstantArray::get(IATy, ArrayRef(ConstantObjectIndex));
-      auto GV = new GlobalVariable(*args.M, IATy, false, GlobalValue::LinkageTypes::PrivateLinkage,
+      auto GV = new GlobalVariable(*args.M, IATy, true,
+                                   GlobalValue::LinkageTypes::PrivateLinkage,
         IA, GVNameObjPage);
       GV->addMetadata("noobf", *MDNode::get(args.M->getContext(), {}));
       args.OutPageTable->push_back(GV);
@@ -309,22 +315,21 @@ void enhancedPageTable(const CreatePageTableArgs &args, DenseMap<Constant *, uns
 Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
   auto M = args.Fn->getParent();
   auto& Ctx = args.Fn->getContext();
-  auto Int32Ty = IntegerType::getInt32Ty(Ctx);
-  auto Zero = ConstantInt::getNullValue(Int32Ty);
-  const auto ModuleKey = static_cast<uint32_t>(args.ModuleKey);
+  auto *IntTy = getPageTableIntTy(*M);
+  auto Zero = ConstantInt::getNullValue(IntTy);
   const auto ModuleMask = static_cast<uint32_t>(args.ModuleKey >> 32);
-  const auto FuncKey = static_cast<uint32_t>(args.FuncKey);
   const auto FuncMask = static_cast<uint32_t>(args.FuncKey >> 32);
   IRBuilder<> IRB{args.InsertBefore};
 
   Value *NextIndex = args.NextIndexValue;
   if (!NextIndex) {
-    auto GVInitIndex = new GlobalVariable(*M, Int32Ty, false, GlobalValue::PrivateLinkage,
-      ConstantInt::get(Int32Ty, args.NextIndex), 
+    auto GVInitIndex =
+        new GlobalVariable(*M, IntTy, true, GlobalValue::PrivateLinkage,
+      ConstantInt::get(IntTy, args.NextIndex), 
       M->getName() + args.Fn->getName() + "_InitIndex" +
       std::to_string(args.NextIndex));
     GVInitIndex->addMetadata("noobf", *MDNode::get(Ctx, {}));
-    NextIndex = IRB.CreateAlignedLoad(Int32Ty, GVInitIndex, Align{1}, true);
+    NextIndex = IRB.CreateAlignedLoad(IntTy, GVInitIndex, Align{1}, true);
   }
 
   auto createDecIndexSwitch = [&IRB, &M](uint8_t mask, Value *NextIndex, Value *PrevIndex, Value* ObjKey) -> Value* {
@@ -364,7 +369,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
   };
 
   if (args.FuncLoopCount && !args.FuncPageTable->empty()) {
-    auto ConstantFuncKey = ConstantInt::get(Int32Ty, FuncKey);
+    auto ConstantFuncKey = ConstantInt::get(IntTy, args.FuncKey);
 
     for (int i = args.FuncPageTable->size() - 1; i >= 0; --i) {
       auto TargetPage = args.FuncPageTable->operator[](i);
@@ -372,7 +377,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       Value *GEP = IRB.CreateGEP(
           TargetPage->getValueType(), TargetPage,
           {Zero, NextIndex});
-      NextIndex = IRB.CreateLoad(Int32Ty, GEP);
+      NextIndex = IRB.CreateLoad(IntTy, GEP);
       SmallVector<uint8_t, 16> maskIndex;
       for (unsigned j = 0; j < 4 * args.FuncLoopCount; ++j) {
         auto mask = static_cast<uint8_t>(FuncMask >> (j * 2)) % 6u;
@@ -384,7 +389,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
     }
   }
 
-  auto ConstantModuleKey = ConstantInt::get(Int32Ty, ModuleKey);
+  auto ConstantModuleKey = ConstantInt::get(IntTy, args.ModuleKey);
 
   for (int i = args.ModulePageTable->size() - 1; i >= 0; --i) {
     auto TargetPage = args.ModulePageTable->operator[](i);
@@ -393,7 +398,7 @@ Value * buildPageTableDecryptIR(const BuildDecryptArgs &args) {
       TargetPage->getValueType(), TargetPage,
       {Zero, NextIndex});
     if (i) {
-      NextIndex = IRB.CreateLoad(Int32Ty, GEP);
+      NextIndex = IRB.CreateLoad(IntTy, GEP);
       SmallVector<uint8_t, 16> maskIndex;
       for (unsigned j = 0; j < 8; ++j) {
         auto mask = static_cast<uint8_t>(ModuleMask >> (j * 3)) % 6u;
@@ -438,7 +443,8 @@ Value *encryptConstant(Constant *plainConstant, Instruction *insertBefore,
       Enc = ConstantExpr::getXor(Enc, ConstantExpr::getNeg(XorKey));
     }
   }
-  auto EncGV = new GlobalVariable(*insertBefore->getModule(), Enc->getType(), false,
+  auto EncGV = new GlobalVariable(*insertBefore->getModule(), Enc->getType(),
+                                  true,
                                   GlobalValue::InternalLinkage, Enc);
   EncGV->addMetadata("noobf", *MDNode::get(Ctx, {}));
   IRBuilder<NoFolder> IRB(insertBefore);

@@ -153,7 +153,7 @@ struct IndirectBranch : public FunctionPass {
       enhancedPageTable(createPageTableArgs, &FuncBBIndex);
     }
 
-    auto Int32Ty = IntegerType::getInt32Ty(Ctx);
+    auto *IntTy = getPageTableIntTy(M);
     for (auto BI : FuncBrs) {
       if (BI && BI->isConditional()) {
         IRBuilder<> IRB(BI);
@@ -166,12 +166,12 @@ struct IndirectBranch : public FunctionPass {
         auto AddrFBB = BlockAddress::get(FBB);
 
         auto TIndex = opt.level() ?
-                        ConstantInt::get(Int32Ty, FuncBBIndex[AddrTBB]) :
-                        ConstantInt::get(Int32Ty, BBIndex[AddrTBB]);
+                        ConstantInt::get(IntTy, FuncBBIndex[AddrTBB]) :
+                        ConstantInt::get(IntTy, BBIndex[AddrTBB]);
 
         auto FIndex = opt.level() ?
-                        ConstantInt::get(Int32Ty, FuncBBIndex[AddrFBB]) :
-                        ConstantInt::get(Int32Ty, BBIndex[AddrFBB]);
+                        ConstantInt::get(IntTy, FuncBBIndex[AddrFBB]) :
+                        ConstantInt::get(IntTy, BBIndex[AddrFBB]);
 
         auto NextIndex = IRB.CreateSelect(Cond, TIndex, FIndex);
 

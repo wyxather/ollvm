@@ -3,6 +3,7 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Transforms/Utils/Local.h" // For DemoteRegToStack and DemotePHIToStack
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
@@ -36,6 +37,7 @@ struct BuildDecryptArgs {
   uint64_t FuncKey;
 };
 
+IntegerType *getPageTableIntTy(Module &M);
 bool valueEscapes(Instruction *Inst);
 void fixStack(Function *f);
 CallBase* fixEH(CallBase* CB);
