@@ -1,4 +1,4 @@
-#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
+﻿#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/ConstantFPEncryption.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -129,7 +129,7 @@ struct ConstantFPEncryption : public FunctionPass {
     return true;
   }
 };
-} // namespace llvm
+} // anonymous namespace
 
 char ConstantFPEncryption::ID = 0;
 

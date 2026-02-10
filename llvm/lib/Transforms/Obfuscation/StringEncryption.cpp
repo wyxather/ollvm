@@ -1,4 +1,4 @@
-#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
+﻿#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/StringEncryption.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -100,7 +100,7 @@ struct StringEncryption : public ModulePass {
   void lowerGlobalConstantStruct(ConstantStruct *CS, IRBuilder<> &IRB, Value *Ptr, Type *Ty);
   void lowerGlobalConstantArray(ConstantArray *CA, IRBuilder<> &IRB, Value *Ptr, Type *Ty);
 };
-} // namespace llvm
+} // anonymous namespace
 
 char StringEncryption::ID = 0;
 bool StringEncryption::runOnModule(Module &M) {

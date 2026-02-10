@@ -1,4 +1,4 @@
-#include "llvm/IR/Constants.h"
+﻿#include "llvm/IR/Constants.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Transforms/Obfuscation/IndirectGlobalVariable.h"
@@ -198,7 +198,7 @@ struct IndirectGlobalVariable : public FunctionPass {
   }
 
   };
-} // namespace llvm
+} // anonymous namespace
 
 char IndirectGlobalVariable::ID = 0;
 FunctionPass *llvm::createIndirectGlobalVariablePass(ObfuscationOptions *argsOptions) {

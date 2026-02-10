@@ -133,7 +133,7 @@ struct ConstantIntEncryption : public FunctionPass {
     return true;
   }
 };
-} // namespace llvm
+} // anonymous namespace
 
 char ConstantIntEncryption::ID = 0;
 

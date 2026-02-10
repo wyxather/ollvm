@@ -1,4 +1,4 @@
-#include "llvm/IR/Constants.h"
+﻿#include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Transforms/Obfuscation/IndirectCall.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
@@ -196,7 +196,7 @@ struct IndirectCall : public FunctionPass {
   }
 
 };
-} // namespace llvm
+} // anonymous namespace
 
 char IndirectCall::ID = 0;
 FunctionPass *llvm::createIndirectCallPass(ObfuscationOptions *argsOptions) {

@@ -212,7 +212,7 @@ struct IndirectBranch : public FunctionPass {
   }
 
 };
-} // namespace llvm
+} // anonymous namespace
 
 char IndirectBranch::ID = 0;
 FunctionPass *llvm::createIndirectBranchPass(ObfuscationOptions *argsOptions) {
