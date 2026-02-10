@@ -1,4 +1,4 @@
-#include "llvm/IR/Constants.h"
+﻿#include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Obfuscation/IndirectBranch.h"
@@ -51,13 +51,11 @@ struct IndirectBranch : public FunctionPass {
           F.isIntrinsic()) {
         continue;
       }
-      SplitAllCriticalEdges(F, CriticalEdgeSplittingOptions(nullptr, nullptr));
-      uint64_t seed = 0;
-      if (auto errorCode = llvm::getRandomBytes(&seed, sizeof(seed))) {
-        llvm::report_fatal_error(
-            StringRef("Failed to get random bytes for page table generation") +
-            errorCode.message());
+      const auto opt = ArgsOptions->toObfuscate(ArgsOptions->indBrOpt(), &F);
+      if (!opt.isEnabled()) {
+        continue;
       }
+      SplitAllCriticalEdges(F, CriticalEdgeSplittingOptions(nullptr, nullptr));
 
       const uint64_t BBKey = RNG();
 
