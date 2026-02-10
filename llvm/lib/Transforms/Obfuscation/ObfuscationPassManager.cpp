@@ -1,4 +1,4 @@
-#include "llvm/Transforms/Obfuscation/ObfuscationPassManager.h"
+﻿#include "llvm/Transforms/Obfuscation/ObfuscationPassManager.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
@@ -13,83 +13,69 @@ using namespace llvm;
 
 static cl::opt<bool>
 EnableIRObfuscation("irobf", cl::init(false), cl::NotHidden,
-                    cl::desc("Enable IR Code Obfuscation."),
-                    cl::ZeroOrMore);
+                    cl::desc("Enable IR Code Obfuscation."));
 
 
 static cl::opt<bool>
 EnableIndirectBr("irobf-indbr", cl::init(false), cl::NotHidden,
-                 cl::desc("Enable IR Indirect Branch Obfuscation."),
-                 cl::ZeroOrMore);
+                 cl::desc("Enable IR Indirect Branch Obfuscation."));
 static cl::opt<uint32_t>
 LevelIndirectBr("level-indbr", cl::init(0), cl::NotHidden,
-                cl::desc("Set IR Indirect Branch Obfuscation Level."),
-                cl::ZeroOrMore);
+                cl::desc("Set IR Indirect Branch Obfuscation Level."));
 
 
 static cl::opt<bool>
 EnableIndirectCall("irobf-icall", cl::init(false), cl::NotHidden,
-                   cl::desc("Enable IR Indirect Call Obfuscation."),
-                   cl::ZeroOrMore);
+                   cl::desc("Enable IR Indirect Call Obfuscation."));
 static cl::opt<uint32_t>
 LevelIndirectCall("level-icall", cl::init(0), cl::NotHidden,
-                  cl::desc("Set IR Indirect Call Obfuscation Level."),
-                  cl::ZeroOrMore);
+                  cl::desc("Set IR Indirect Call Obfuscation Level."));
 
 
 static cl::opt<bool> EnableIndirectGV(
     "irobf-indgv", cl::init(false), cl::NotHidden,
-    cl::desc("Enable IR Indirect Global Variable Obfuscation."),
-    cl::ZeroOrMore);
+    cl::desc("Enable IR Indirect Global Variable Obfuscation."));
 static cl::opt<uint32_t> LevelIndirectGV(
     "level-indgv", cl::init(0), cl::NotHidden,
-    cl::desc("Set IR Indirect Global Variable Obfuscation Level."),
-    cl::ZeroOrMore);
+    cl::desc("Set IR Indirect Global Variable Obfuscation Level."));
 
 
 static cl::opt<bool> EnableIRFlattening(
     "irobf-fla", cl::init(false), cl::NotHidden,
-    cl::desc("Enable IR Control Flow Flattening Obfuscation."), cl::ZeroOrMore);
+    cl::desc("Enable IR Control Flow Flattening Obfuscation."));
 
 
 static cl::opt<bool>
 EnableIRStringEncryption("irobf-cse", cl::init(false), cl::NotHidden,
-                         cl::desc("Enable IR Constant String Encryption."),
-                         cl::ZeroOrMore);
+                         cl::desc("Enable IR Constant String Encryption."));
 
 
 static cl::opt<bool>
 EnableIRConstantIntEncryption("irobf-cie", cl::init(false), cl::NotHidden,
                               cl::desc(
-                                  "Enable IR Constant Integer Encryption."),
-                              cl::ZeroOrMore);
+                                  "Enable IR Constant Integer Encryption."));
 static cl::opt<uint32_t> LevelIRConstantIntEncryption(
     "level-cie", cl::init(0), cl::NotHidden,
-    cl::desc("Set IR Constant Integer Encryption Level."),
-    cl::ZeroOrMore);
+    cl::desc("Set IR Constant Integer Encryption Level."));
 
 
 static cl::opt<bool>
 EnableIRConstantFPEncryption("irobf-cfe", cl::init(false), cl::NotHidden,
-                             cl::desc("Enable IR Constant FP Encryption."),
-                             cl::ZeroOrMore);
+                             cl::desc("Enable IR Constant FP Encryption."));
 
 static cl::opt<uint32_t> LevelIRConstantFPEncryption(
     "level-cfe", cl::init(0), cl::NotHidden,
-    cl::desc("Set IR Constant FP Encryption Level."),
-    cl::ZeroOrMore);
+    cl::desc("Set IR Constant FP Encryption Level."));
 
 
 static cl::opt<bool>
 EnableRttiEraser("irobf-rtti", cl::init(false), cl::NotHidden,
-  cl::desc("Enable RTTI Eraser."),
-  cl::ZeroOrMore);
+                 cl::desc("Enable RTTI Eraser."));
 
 
 static cl::opt<std::string>
 ArkariConfigPath("arkari-cfg", cl::init(std::string{}), cl::NotHidden,
-                 cl::desc("Arkari config path."),
-                 cl::ZeroOrMore);
+                 cl::desc("Arkari config path."));
 
 namespace llvm {
 
