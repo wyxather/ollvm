@@ -188,7 +188,7 @@ static raw_ostream &operator<<(raw_ostream &                  O,
 static void fixPhis(BasicBlock *SuccBB, BasicBlock *OrigBB, BasicBlock *NewBB,
                     unsigned    NumMergedCases) {
   for (BasicBlock::iterator I = SuccBB->begin(),
-                            IE = SuccBB->getFirstNonPHI()->getIterator();
+                            IE = SuccBB->getFirstNonPHIIt();
        I != IE; ++I) {
     PHINode *PN = cast<PHINode>(I);
 
