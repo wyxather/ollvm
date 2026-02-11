@@ -23,7 +23,7 @@ struct StringEncryption : public ModulePass {
   static char ID;
 
   struct CSPEntry {
-    CSPEntry() : ID(0), Offset(0), DecGV(nullptr), DecStatus(nullptr), IsUTF16(false), DecFunc(nullptr) {}
+    CSPEntry() : ID(0), Offset(0), DecGV(nullptr), DecStatus(nullptr), IsUTF16(false) {}
     unsigned ID;
     unsigned Offset;
     GlobalVariable *DecGV;
@@ -35,7 +35,6 @@ struct StringEncryption : public ModulePass {
     bool IsUTF16;
     std::vector<uint16_t> Data16;
     std::vector<uint16_t> EncKey16;
-    Function *DecFunc;
   };
 
   struct CSUser {
@@ -55,6 +54,8 @@ struct StringEncryption : public ModulePass {
   DenseMap<GlobalVariable *, CSPEntry *> CSPEntryMap;
   DenseMap<GlobalVariable *, CSUser *> CSUserMap;
   GlobalVariable *EncryptedStringTable = nullptr;
+  Function *SharedDecFuncI8 = nullptr;
+  Function *SharedDecFuncI16 = nullptr;
   std::set<GlobalVariable *> MaybeDeadGlobalVars;
 
   StringEncryption(ObfuscationOptions *argsOptions) : ModulePass(ID) {
@@ -92,7 +93,7 @@ struct StringEncryption : public ModulePass {
   static bool isValidToEncrypt(GlobalVariable *GV);
   bool processConstantStringUse(Function *F);
   void deleteUnusedGlobalVariable();
-  static Function *buildDecryptFunction(Module *M, const CSPEntry *Entry);
+  static Function *buildSharedDecryptFunction(Module *M, bool IsUTF16);
   Function *buildInitFunction(Module *M, const CSUser *User);
   template <typename T>
   void getRandomBytes(std::vector<T> &Bytes, uint32_t MinSize, uint32_t MaxSize);
@@ -170,6 +171,16 @@ SmallPtrSet<GlobalVariable *, 16> ConstantStringUsers;
   }
 
   // encrypt those strings, build corresponding decrypt function
+  bool hasI8Strings = false, hasI16Strings = false;
+  for (CSPEntry *Entry : ConstantStringPool) {
+    if (Entry->IsUTF16) hasI16Strings = true;
+    else hasI8Strings = true;
+  }
+  if (hasI8Strings)
+    SharedDecFuncI8 = buildSharedDecryptFunction(&M, false);
+  if (hasI16Strings)
+    SharedDecFuncI16 = buildSharedDecryptFunction(&M, true);
+
   for (CSPEntry *Entry: ConstantStringPool) {
     if (!Entry->IsUTF16) {
       getRandomBytes(Entry->EncKey, 16, 32);
@@ -215,7 +226,6 @@ SmallPtrSet<GlobalVariable *, 16> ConstantStringUsers;
         LastPlainChar = CurrentPlainChar;
       }
     }
-    Entry->DecFunc = buildDecryptFunction(&M, Entry);
   }
 
   // build initialization function for supported constant string users
@@ -288,11 +298,6 @@ SmallPtrSet<GlobalVariable *, 16> ConstantStringUsers;
 
   // delete unused global variables
   deleteUnusedGlobalVariable();
-  for (CSPEntry *Entry: ConstantStringPool) {
-    if (Entry->DecFunc->use_empty()) {
-      Entry->DecFunc->eraseFromParent();
-    }
-  }
   return Changed;
 }
 
@@ -357,26 +362,31 @@ void StringEncryption::getRandomBytes(std::vector<T> &Bytes, uint32_t MinSize, u
 //  }
 //}
 
-Function *StringEncryption::buildDecryptFunction(Module *M, const StringEncryption::CSPEntry *Entry) {
+Function *StringEncryption::buildSharedDecryptFunction(Module *M, bool IsUTF16) {
   LLVMContext &Ctx = M->getContext();
   IRBuilder<> IRB(Ctx);
 
-  // Decide plain element type and set up function signature accordingly
-  Type *PlainEltTy = Entry->IsUTF16 ? Type::getInt16Ty(Ctx) : Type::getInt8Ty(Ctx);
-  PointerType *PlainPtrTy = PointerType::getUnqual(Ctx);
-  PointerType *DataPtrTy = PointerType::getUnqual(Ctx); // data buffer is byte array
+  Type *PlainEltTy = IsUTF16 ? Type::getInt16Ty(Ctx) : Type::getInt8Ty(Ctx);
+  PointerType *PtrTy = PointerType::getUnqual(Ctx);
+  Type *I32Ty = Type::getInt32Ty(Ctx);
 
+  // Shared signature: void(ptr plain_string, ptr data, i32 key_elem_size, i32 data_size, ptr dec_status)
   FunctionType *FuncTy = FunctionType::get(
       Type::getVoidTy(Ctx),
-      {PlainPtrTy, DataPtrTy},
+      {PtrTy, PtrTy, I32Ty, I32Ty, PtrTy},
       false);
   Function *DecFunc =
-      Function::Create(FuncTy, GlobalValue::PrivateLinkage, "goron_decrypt_string_" + Twine::utohexstr(Entry->ID), M);
+      Function::Create(FuncTy, GlobalValue::PrivateLinkage,
+        IsUTF16 ? "goron_decrypt_string_i16" : "goron_decrypt_string_i8", M);
+  DecFunc->addFnAttr(Attribute::NoInline);
+  DecFunc->addFnAttr(Attribute::OptimizeForSize);
 
   auto ArgIt = DecFunc->arg_begin();
-  Argument *PlainString = ArgIt; // output
-  ++ArgIt;
-  Argument *Data = ArgIt;       // input
+  Argument *PlainString = ArgIt++;
+  Argument *Data = ArgIt++;
+  Argument *KeyElemSizeArg = ArgIt++;
+  Argument *DataSizeArg = ArgIt++;
+  Argument *DecStatusArg = ArgIt;
 
   AttrBuilder NoCaptureAttrBuilder{Ctx};
   NoCaptureAttrBuilder.addCapturesAttr(llvm::CaptureInfo(llvm::CaptureComponents::None));
@@ -385,6 +395,10 @@ Function *StringEncryption::buildDecryptFunction(Module *M, const StringEncrypti
   PlainString->addAttrs(NoCaptureAttrBuilder);
   Data->setName("data");
   Data->addAttrs(NoCaptureAttrBuilder);
+  KeyElemSizeArg->setName("key_elem_size");
+  DataSizeArg->setName("data_size");
+  DecStatusArg->setName("dec_status");
+  DecStatusArg->addAttrs(NoCaptureAttrBuilder);
 
   BasicBlock *Enter = BasicBlock::Create(Ctx, "Enter", DecFunc);
   BasicBlock *LoopBody = BasicBlock::Create(Ctx, "LoopBody", DecFunc);
@@ -395,15 +409,13 @@ Function *StringEncryption::buildDecryptFunction(Module *M, const StringEncrypti
   BasicBlock *Exit = BasicBlock::Create(Ctx, "Exit", DecFunc);
 
   IRB.SetInsertPoint(Enter);
-  // Key size in elements (for i8 keys this is number of bytes; for i16 keys this is number of 16-bit words)
-  ConstantInt *KeyElemSize = ConstantInt::get(Type::getInt32Ty(Ctx), Entry->IsUTF16 ? static_cast<uint32_t>(Entry->EncKey16.size()) : static_cast<uint32_t>(Entry->EncKey.size()));
-  // But the EncryptedStringTable stores bytes: compute key-size-in-bytes for GEP
-  uint32_t KeySizeInBytes = Entry->IsUTF16 ? static_cast<uint32_t>(Entry->EncKey16.size() * 2) : static_cast<uint32_t>(Entry->EncKey.size());
-  ConstantInt *KeySizeBytesConst = ConstantInt::get(Type::getInt32Ty(Ctx), KeySizeInBytes);
+  // Compute key size in bytes: for i8 it equals key_elem_size, for i16 it's key_elem_size * 2
+  Value *KeySizeBytesVal = IsUTF16
+    ? IRB.CreateShl(KeyElemSizeArg, 1)
+    : static_cast<Value *>(KeyElemSizeArg);
 
-  Value *EncPtr = IRB.CreateInBoundsGEP(IRB.getInt8Ty(), Data, KeySizeBytesConst);
-  Value *DecStatus = IRB.CreateLoad(
-      Entry->DecStatus->getValueType(), Entry->DecStatus);
+  Value *EncPtr = IRB.CreateInBoundsGEP(IRB.getInt8Ty(), Data, KeySizeBytesVal);
+  Value *DecStatus = IRB.CreateLoad(I32Ty, DecStatusArg);
   Value *IsDecrypted = IRB.CreateICmpEQ(DecStatus, IRB.getInt32(1));
   IRB.CreateCondBr(IsDecrypted, Exit, LoopBody);
 
@@ -412,95 +424,60 @@ Function *StringEncryption::buildDecryptFunction(Module *M, const StringEncrypti
   LoopCounter->addIncoming(IRB.getInt32(0), Enter);
 
   PHINode *LastDecrypted = IRB.CreatePHI(PlainEltTy, 2);
-  // incoming last decrypted initial is 0
   LastDecrypted->addIncoming(Constant::getNullValue(PlainEltTy), Enter);
 
-  // Compute KeyIdx = LoopCounter % KeyElemSize
-  Value *KeyIdx = IRB.CreateURem(LoopCounter, KeyElemSize);
+  Value *KeyIdx = IRB.CreateURem(LoopCounter, KeyElemSizeArg);
 
-  // Load KeyChar: for bytes load i8, for words load i16 (we'll bitcast data to the appropriate pointer)
   Value *KeyChar = nullptr;
-  if (!Entry->IsUTF16) {
+  if (!IsUTF16) {
     Value *KeyCharPtr = IRB.CreateInBoundsGEP(IRB.getInt8Ty(), Data, KeyIdx);
     KeyChar = IRB.CreateLoad(IRB.getInt8Ty(), KeyCharPtr);
   } else {
-    // bitcast data to i16* and index by KeyIdx
-    Value *KeyBase = IRB.CreateBitCast(Data, PointerType::getUnqual(Ctx));
-    Value *KeyCharPtr = IRB.CreateInBoundsGEP(Type::getInt16Ty(Ctx), KeyBase, KeyIdx);
+    Value *KeyCharPtr = IRB.CreateInBoundsGEP(Type::getInt16Ty(Ctx), Data, KeyIdx);
     KeyChar = IRB.CreateLoad(Type::getInt16Ty(Ctx), KeyCharPtr);
   }
 
-  // Load EncChar (encrypted stream element)
   Value *EncChar = nullptr;
-  if (!Entry->IsUTF16) {
+  if (!IsUTF16) {
     Value *EncCharPtr = IRB.CreateInBoundsGEP(IRB.getInt8Ty(), EncPtr, LoopCounter);
     EncChar = IRB.CreateLoad(IRB.getInt8Ty(), EncCharPtr, true);
   } else {
-    // EncPtr is i8*, we need to load i16 at position LoopCounter * 2
-    // Compute byte offset = LoopCounter * 2
-    Value *Two = IRB.getInt32(2);
-    Value *IdxBytes = IRB.CreateMul(LoopCounter, Two);
+    Value *IdxBytes = IRB.CreateShl(LoopCounter, 1);
     Value *EncCharBytePtr = IRB.CreateInBoundsGEP(IRB.getInt8Ty(), EncPtr, IdxBytes);
-    // bitcast pointer to i16* then load
-    Value *EncChar16Ptr = IRB.CreateBitCast(EncCharBytePtr, PointerType::getUnqual(Ctx));
-    EncChar = IRB.CreateLoad(Type::getInt16Ty(Ctx), EncChar16Ptr, true);
+    EncChar = IRB.CreateLoad(Type::getInt16Ty(Ctx), EncCharBytePtr, true);
   }
 
-  //====================Initialized=========================
-  // Create branch condition: (KeyIdx * KeyChar) % 2 == 0
-  // Need to ensure operands are i32 for multiplication and remainder
   Value *KeyIdxZext = IRB.CreateZExt(KeyIdx, IRB.getInt32Ty());
-  Value *KeyCharZext = nullptr;
-  if (!Entry->IsUTF16) {
-    KeyCharZext = IRB.CreateZExt(KeyChar, IRB.getInt32Ty());
-  } else {
-    KeyCharZext = IRB.CreateZExt(KeyChar, IRB.getInt32Ty());
-  }
+  Value *KeyCharZext = IRB.CreateZExt(KeyChar, IRB.getInt32Ty());
   Value *Mul = IRB.CreateMul(KeyIdxZext, KeyCharZext);
   Value *BrKey = IRB.CreateAnd(Mul, IRB.getInt32(1));
   Value *BrCond = IRB.CreateICmpEQ(BrKey, IRB.getInt32(0));
   IRB.CreateCondBr(BrCond, LoopBr0, LoopBr1);
 
-  // Loop0 Start - %2 == 0;
   IRB.SetInsertPoint(LoopBr0);
-  Value *DecChar0 = nullptr;
-  if (!Entry->IsUTF16) {
-    Value *Tmp0 = IRB.CreateAdd(EncChar, LastDecrypted);
-    Tmp0 = IRB.CreateXor(Tmp0, KeyChar);
-    Tmp0 = IRB.CreateNot(Tmp0);
-    DecChar0 = Tmp0;
-  } else {
-    Value *Tmp0 = IRB.CreateAdd(EncChar, LastDecrypted);
-    Tmp0 = IRB.CreateXor(Tmp0, KeyChar);
-    Tmp0 = IRB.CreateNot(Tmp0);
-    DecChar0 = Tmp0;
+  {
+    Value *Tmp = IRB.CreateAdd(EncChar, LastDecrypted);
+    Tmp = IRB.CreateXor(Tmp, KeyChar);
+    Tmp = IRB.CreateNot(Tmp);
+    IRB.CreateBr(LoopEnd);
   }
-  IRB.CreateBr(LoopEnd);
+  Value *DecChar0 = &*std::prev(LoopBr0->end(), 2); // the Not instruction
 
-  // Loop1 Start - %2 == 1;
   IRB.SetInsertPoint(LoopBr1);
-  Value *DecChar1 = nullptr;
-  if (!Entry->IsUTF16) {
-    Value *Tmp1 = IRB.CreateSub(EncChar, LastDecrypted);
-    Tmp1 = IRB.CreateXor(Tmp1, KeyChar);
-    Tmp1 = IRB.CreateNeg(Tmp1);
-    DecChar1 = Tmp1;
-  } else {
-    Value *Tmp1 = IRB.CreateSub(EncChar, LastDecrypted);
-    Tmp1 = IRB.CreateXor(Tmp1, KeyChar);
-    Tmp1 = IRB.CreateNeg(Tmp1);
-    DecChar1 = Tmp1;
+  {
+    Value *Tmp = IRB.CreateSub(EncChar, LastDecrypted);
+    Tmp = IRB.CreateXor(Tmp, KeyChar);
+    Tmp = IRB.CreateNeg(Tmp);
+    IRB.CreateBr(LoopEnd);
   }
-  IRB.CreateBr(LoopEnd);
+  Value *DecChar1 = &*std::prev(LoopBr1->end(), 2); // the Neg instruction
 
-  // LoopEnd and finally decrypt current char
   IRB.SetInsertPoint(LoopEnd);
   PHINode *BrDecChar = IRB.CreatePHI(PlainEltTy, 2);
   BrDecChar->addIncoming(DecChar0, LoopBr0);
   BrDecChar->addIncoming(DecChar1, LoopBr1);
   Value *DecChar = IRB.CreateXor(BrDecChar, KeyChar);
 
-  //Store
   LastDecrypted->addIncoming(DecChar, LoopEnd);
   Value *DecCharPtr = IRB.CreateInBoundsGEP(PlainEltTy,
       PlainString, LoopCounter);
@@ -509,12 +486,11 @@ Function *StringEncryption::buildDecryptFunction(Module *M, const StringEncrypti
   Value *NewCounter = IRB.CreateAdd(LoopCounter, IRB.getInt32(1), "", true, true);
   LoopCounter->addIncoming(NewCounter, LoopEnd);
 
-  uint32_t DataSize = Entry->IsUTF16 ? static_cast<uint32_t>(Entry->Data16.size()) : static_cast<uint32_t>(Entry->Data.size());
-  Value *Cond = IRB.CreateICmpEQ(NewCounter, IRB.getInt32(static_cast<uint32_t>(DataSize)));
+  Value *Cond = IRB.CreateICmpEQ(NewCounter, DataSizeArg);
   IRB.CreateCondBr(Cond, UpdateDecStatus, LoopBody);
 
   IRB.SetInsertPoint(UpdateDecStatus);
-  IRB.CreateStore(IRB.getInt32(1), Entry->DecStatus);
+  IRB.CreateStore(IRB.getInt32(1), DecStatusArg);
   IRB.CreateBr(Exit);
 
   IRB.SetInsertPoint(Exit);
@@ -638,7 +614,16 @@ bool StringEncryption::processConstantStringUse(Function *F) {
                     EncryptedStringTable->getValueType(),
                     EncryptedStringTable,
                     {IRB.getInt32(0), IRB.getInt32(Entry->Offset)});
-                fixEH(IRB.CreateCall(Entry->DecFunc, {OutBuf, Data}));
+                Function *DecFunc = Entry->IsUTF16 ? SharedDecFuncI16 : SharedDecFuncI8;
+                uint32_t KeyElemSize = Entry->IsUTF16
+                    ? static_cast<uint32_t>(Entry->EncKey16.size())
+                    : static_cast<uint32_t>(Entry->EncKey.size());
+                uint32_t DataSize = Entry->IsUTF16
+                    ? static_cast<uint32_t>(Entry->Data16.size())
+                    : static_cast<uint32_t>(Entry->Data.size());
+                fixEH(IRB.CreateCall(DecFunc, {OutBuf, Data,
+                    IRB.getInt32(KeyElemSize), IRB.getInt32(DataSize),
+                    Entry->DecStatus}));
 
                 Inst.replaceUsesOfWith(GV, Entry->DecGV);
                 MaybeDeadGlobalVars.insert(GV);
@@ -672,14 +657,23 @@ bool StringEncryption::processConstantStringUse(Function *F) {
                 Inst.replaceUsesOfWith(GV, Entry->DecGV);
               } else {
                 IRBuilder<> IRB(Inst.isEHPad() ? &*Inst.getParent()->getPrevNode()->getFirstInsertionPt() : &Inst);
-                
+
                 Value *OutBuf = IRB.CreateBitCast(Entry->DecGV,
                                                   PointerType::getUnqual(Ctx));
                 Value *Data = IRB.CreateInBoundsGEP(
                     EncryptedStringTable->getValueType(),
                     EncryptedStringTable,
                     {IRB.getInt32(0), IRB.getInt32(Entry->Offset)});
-                fixEH(IRB.CreateCall(Entry->DecFunc, {OutBuf, Data}));
+                Function *DecFunc = Entry->IsUTF16 ? SharedDecFuncI16 : SharedDecFuncI8;
+                uint32_t KeyElemSize = Entry->IsUTF16
+                    ? static_cast<uint32_t>(Entry->EncKey16.size())
+                    : static_cast<uint32_t>(Entry->EncKey.size());
+                uint32_t DataSize = Entry->IsUTF16
+                    ? static_cast<uint32_t>(Entry->Data16.size())
+                    : static_cast<uint32_t>(Entry->Data.size());
+                fixEH(IRB.CreateCall(DecFunc, {OutBuf, Data,
+                    IRB.getInt32(KeyElemSize), IRB.getInt32(DataSize),
+                    Entry->DecStatus}));
 
                 Inst.replaceUsesOfWith(GV, Entry->DecGV);
                 MaybeDeadGlobalVars.insert(GV);
