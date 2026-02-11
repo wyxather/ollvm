@@ -1,4 +1,4 @@
-﻿#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
+#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/ConstantIntEncryption.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -27,7 +27,7 @@ struct ConstantIntEncryption : public FunctionPass {
   ObfuscationOptions *ArgsOptions;
 
   DenseMap<Function *, SmallPtrSet<Instruction *, 16>> FunctionModifyIRs;
-  std::mt19937_64 RNG;
+  std::mt19937_64                                      RNG;
 
   ConstantIntEncryption(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
@@ -47,16 +47,16 @@ struct ConstantIntEncryption : public FunctionPass {
 
   bool doInitialization(Module &M) override {
     bool Changed = false;
-    for (auto& F : M) {
+    for (auto &F : M) {
       const auto opt = ArgsOptions->toObfuscate(ArgsOptions->cieOpt(), &F);
       if (!opt.isEnabled()) {
         continue;
       }
       Changed |= expandConstantExpr(F);
-      for (auto& BB : F) {
-        for (auto& I : BB) {
+      for (auto &BB : F) {
+        for (auto &I : BB) {
           if (I.isEHPad() || isa<AllocaInst>(&I) ||
-              isa<IntrinsicInst>(&I) || isa<SwitchInst>(I)||
+              isa<IntrinsicInst>(&I) || isa<SwitchInst>(I) ||
               I.isAtomic()) {
             continue;
           }
@@ -64,18 +64,21 @@ struct ConstantIntEncryption : public FunctionPass {
           auto GEP = dyn_cast<GetElementPtrInst>(&I);
           auto PHI = dyn_cast<PHINode>(&I);
 
-          for (unsigned i = 0; i < (PHI ? PHI->getNumIncomingValues() : I.getNumOperands()); ++i) {
+          for (unsigned i = 0; i < (PHI
+                                      ? PHI->getNumIncomingValues()
+                                      : I.getNumOperands()); ++i) {
             if (CI && CI->isBundleOperand(i)) {
               continue;
             }
             if (GEP && (i < 2 || GEP->getSourceElementType()->isStructTy())) {
               continue;
             }
-            if (PHI && isa<SwitchInst>(PHI->getIncomingBlock(i)->getTerminator())) {
+            if (PHI && isa<SwitchInst>(
+                    PHI->getIncomingBlock(i)->getTerminator())) {
               continue;
             }
-            Value* Opr = PHI ? PHI->getIncomingValue(i) : I.getOperand(i);
-            auto CTI = dyn_cast<ConstantInt>(Opr);
+            Value *Opr = PHI ? PHI->getIncomingValue(i) : I.getOperand(i);
+            auto   CTI = dyn_cast<ConstantInt>(Opr);
             if (CTI && CTI->getBitWidth() > 7) {
               FunctionModifyIRs[&F].insert(&I);
               break;
@@ -92,7 +95,7 @@ struct ConstantIntEncryption : public FunctionPass {
     if (!opt.isEnabled()) {
       return false;
     }
-    auto& FuncModifyIRs = FunctionModifyIRs[&F];
+    auto &FuncModifyIRs = FunctionModifyIRs[&F];
     if (FuncModifyIRs.empty()) {
       return false;
     }
@@ -109,19 +112,20 @@ struct ConstantIntEncryption : public FunctionPass {
         if (GEP && i < 2) {
           continue;
         }
-        Value* Opr = I->getOperand(i);
+        Value *Opr = I->getOperand(i);
         if (auto CTI = dyn_cast<ConstantInt>(Opr)) {
           if (CTI->getBitWidth() < 4) {
             continue;
           }
-          if (PHI && isa<SwitchInst>(PHI->getIncomingBlock(i)->getTerminator())) {
+          if (PHI && isa<
+                SwitchInst>(PHI->getIncomingBlock(i)->getTerminator())) {
             continue;
           }
 
-          auto InsertPoint = PHI ?
-                               PHI->getIncomingBlock(i)->getTerminator() :
-                               I;
-          auto CipherConstant = encryptConstant(CTI, InsertPoint, RNG, opt.level());
+          auto InsertPoint =
+              PHI ? PHI->getIncomingBlock(i)->getTerminator() : I;
+          auto CipherConstant = encryptConstant(CTI, InsertPoint, RNG,
+                                                opt.level());
           if (PHI)
             PHI->setIncomingValue(i, CipherConstant);
           else

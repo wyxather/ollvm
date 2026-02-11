@@ -101,7 +101,8 @@ public:
           currentChar == '$') {
         continue;
       }
-      result[i] = pwTable[(currentChar ^ hash[i % sizeof(hash)]) % (sizeof(pwTable) - 1)];
+      result[i] = pwTable[(currentChar ^ hash[i % sizeof(hash)]) % (
+                            sizeof(pwTable) - 1)];
     }
     return result;
   }

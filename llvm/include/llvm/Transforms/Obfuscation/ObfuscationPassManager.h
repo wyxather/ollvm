@@ -17,7 +17,7 @@ class ModulePass;
 class PassRegistry;
 
 ModulePass *createObfuscationPassManager();
-void initializeObfuscationPassManagerPass(PassRegistry &Registry);
+void        initializeObfuscationPassManagerPass(PassRegistry &Registry);
 
 class ObfuscationPassManagerPass
     : public PassInfoMixin<ObfuscationPassManagerPass> {
@@ -25,7 +25,7 @@ public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
     outs() << M.getName() << "\n";
     ModulePass *OPM = createObfuscationPassManager();
-    bool Changed = OPM->runOnModule(M);
+    bool        Changed = OPM->runOnModule(M);
     OPM->doFinalization(M);
     delete OPM;
     if (Changed) {
@@ -33,7 +33,7 @@ public:
     }
     return PreservedAnalyses::all();
   }
-  
+
   static llvm::StringRef name() {
     return "ObfuscationPassManagerPass";
   }

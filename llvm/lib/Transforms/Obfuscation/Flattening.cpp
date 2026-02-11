@@ -1,4 +1,4 @@
-﻿//===- Flattening.cpp - Flattening Obfuscation pass------------------------===//
+//===- Flattening.cpp - Flattening Obfuscation pass------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -38,7 +38,7 @@ struct Flattening : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
 
   ObfuscationOptions *ArgsOptions;
-  std::mt19937_64 RNG;
+  std::mt19937_64     RNG;
 
   Flattening(unsigned            pointerSize,
              ObfuscationOptions *argsOptions) : FunctionPass(ID) {
@@ -88,14 +88,14 @@ bool Flattening::flatten(Function *f) {
   }
   auto *IntTy = cast<IntegerType>(intType);
 
-  auto randWord = [&]() -> uint64_t {
+  auto randWord = [&]() ->uint64_t {
     uint64_t v = RNG();
     if (pointerSize != 8)
       v &= 0xffffffffull;
     return v;
   };
 
-  auto randConst = [&]() -> ConstantInt * {
+  auto randConst = [&]() ->ConstantInt * {
     return ConstantInt::get(IntTy, randWord());
   };
 
@@ -136,7 +136,7 @@ bool Flattening::flatten(Function *f) {
   // Remove jump
   insertBlock->getTerminator()->eraseFromParent();
 
-  DenseSet<uint64_t> UsedCases;
+  DenseSet<uint64_t>                    UsedCases;
   DenseMap<BasicBlock *, ConstantInt *> CaseVal;
 
   for (BasicBlock *BB : origBB) {
@@ -152,12 +152,12 @@ bool Flattening::flatten(Function *f) {
 
   // Create switch variable and set as it
   IRBuilder<> IRB{insertBlock};
-  const auto switchVar = IRB.CreateAlloca(IntTy, nullptr, "switchVar");
-  const auto switchXorVar = IRB.CreateAlloca(IntTy, nullptr, "switchXor");
+  const auto  switchVar = IRB.CreateAlloca(IntTy, nullptr, "switchVar");
+  const auto  switchXorVar = IRB.CreateAlloca(IntTy, nullptr, "switchXor");
 
   // init：Encoded = EntryCase ^ XorKey
   ConstantInt *entryXor = randConst();
-  Value *entryEnc = IRB.CreateXor(EntryCase, entryXor);
+  Value *      entryEnc = IRB.CreateXor(EntryCase, entryXor);
   IRB.CreateStore(entryEnc, switchVar, true);
   IRB.CreateStore(entryXor, switchXorVar, true);
 
@@ -174,8 +174,8 @@ bool Flattening::flatten(Function *f) {
 
   // rolling delta
   ConstantInt *delta = randConst();
-  Value *enc1 = IRB.CreateXor(enc0, delta, "switchVar.enc1");
-  Value *xor1 = IRB.CreateXor(xor0, delta, "switchXor.xor1");
+  Value *      enc1 = IRB.CreateXor(enc0, delta, "switchVar.enc1");
+  Value *      xor1 = IRB.CreateXor(xor0, delta, "switchXor.xor1");
   IRB.CreateStore(enc1, switchVar, true);
   IRB.CreateStore(xor1, switchXorVar, true);
 
@@ -224,7 +224,7 @@ bool Flattening::flatten(Function *f) {
     auto writeNextEncoded = [&](Value *NextCaseVal) {
       // NextEnc = NextCase ^ NewXor
       ConstantInt *newXor = randConst();
-      Value *nextEnc = IRB.CreateXor(NextCaseVal, newXor);
+      Value *      nextEnc = IRB.CreateXor(NextCaseVal, newXor);
 
       IRB.CreateStore(nextEnc, switchVar, true);
       IRB.CreateStore(newXor, switchXorVar, true);

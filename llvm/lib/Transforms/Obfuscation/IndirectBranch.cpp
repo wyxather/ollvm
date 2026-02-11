@@ -1,4 +1,4 @@
-﻿#include "llvm/IR/Constants.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Obfuscation/IndirectBranch.h"
@@ -16,20 +16,21 @@
 #define DEBUG_TYPE "indbr"
 
 using namespace llvm;
+
 namespace {
 struct IndirectBranch : public FunctionPass {
-  static char ID;
+  static char         ID;
   ObfuscationOptions *ArgsOptions;
 
-  DenseMap<Function *, SmallPtrSet<Constant *, 8>> FunctionBBs;
+  DenseMap<Function *, SmallPtrSet<Constant *, 8>>   FunctionBBs;
   DenseMap<Function *, SmallPtrSet<BranchInst *, 8>> FunctionBrs;
 
-  std::vector<Constant *> BBAddrTargets;
-  DenseMap<Constant *, unsigned> BBIndex;
-  DenseMap<Constant *, uint64_t> BBKeys;
+  std::vector<Constant *>          BBAddrTargets;
+  DenseMap<Constant *, unsigned>   BBIndex;
+  DenseMap<Constant *, uint64_t>   BBKeys;
   SmallVector<GlobalVariable *, 8> BBPageTable;
-  std::mt19937_64 RNG;
-  uint64_t PtrEncKey = 0;
+  std::mt19937_64                  RNG;
+  uint64_t                         PtrEncKey = 0;
 
   bool RunOnFuncChanged = false;
 
@@ -45,7 +46,9 @@ struct IndirectBranch : public FunctionPass {
     RNG = std::mt19937_64(seed);
   }
 
-  StringRef getPassName() const override { return {"IndirectBranch"}; }
+  StringRef getPassName() const override {
+    return {"IndirectBranch"};
+  }
 
   void NumberBasicBlock(Module &M) {
     for (auto &F : M) {
@@ -69,7 +72,7 @@ struct IndirectBranch : public FunctionPass {
             unsigned N = BI->getNumSuccessors();
             for (unsigned I = 0; I < N; I++) {
               BasicBlock *Successor = BI->getSuccessor(I);
-              auto BBAddr = BlockAddress::get(Successor);
+              auto        BBAddr = BlockAddress::get(Successor);
               FunctionBBs[&F].insert(BBAddr);
               if (BBKeys.count(BBAddr) == 0) {
                 BBAddrTargets.push_back(BBAddr);
@@ -99,7 +102,7 @@ struct IndirectBranch : public FunctionPass {
 
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
-    createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectBr" ;
+    createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectBr";
     createPageTableArgs.RNG = &RNG;
     createPageTableArgs.M = &M;
     createPageTableArgs.Objects = &BBAddrTargets;
@@ -120,21 +123,21 @@ struct IndirectBranch : public FunctionPass {
     }
 
     LLVMContext &Ctx = Fn.getContext();
-    auto& M = *Fn.getParent();
+    auto &       M = *Fn.getParent();
 
     if (BBAddrTargets.empty()) {
       return false;
     }
 
-    auto& FuncBBsSet = FunctionBBs[&Fn];
-    auto& FuncBrs = FunctionBrs[&Fn];
+    auto &FuncBBsSet = FunctionBBs[&Fn];
+    auto &FuncBrs = FunctionBrs[&Fn];
     if (FuncBBsSet.empty() || FuncBrs.empty()) {
       return false;
     }
 
-    std::vector<Constant *> FuncBBs;
+    std::vector<Constant *>        FuncBBs;
     DenseMap<Constant *, uint64_t> FuncKeys;
-    auto FuncKey = RNG();
+    auto                           FuncKey = RNG();
 
     for (auto bb : FuncBBsSet) {
       FuncBBs.push_back(bb);
@@ -142,12 +145,13 @@ struct IndirectBranch : public FunctionPass {
     }
 
     SmallVector<GlobalVariable *, 8> FuncBBPageTable;
-    DenseMap<Constant *, unsigned> FuncBBIndex;
+    DenseMap<Constant *, unsigned>   FuncBBIndex;
 
     if (opt.level()) {
       CreatePageTableArgs createPageTableArgs;
       createPageTableArgs.CountLoop = opt.level();
-      createPageTableArgs.GVNamePrefix = M.getName().str() + Fn.getName().str() + "_IndirectBr" ;
+      createPageTableArgs.GVNamePrefix =
+          M.getName().str() + Fn.getName().str() + "_IndirectBr";
       createPageTableArgs.M = &M;
       createPageTableArgs.RNG = &RNG;
       createPageTableArgs.Objects = &FuncBBs;
@@ -170,13 +174,13 @@ struct IndirectBranch : public FunctionPass {
         auto AddrTBB = BlockAddress::get(TBB);
         auto AddrFBB = BlockAddress::get(FBB);
 
-        auto TIndex = opt.level() ?
-                        ConstantInt::get(IntTy, FuncBBIndex[AddrTBB]) :
-                        ConstantInt::get(IntTy, BBIndex[AddrTBB]);
+        auto TIndex = opt.level()
+                        ? ConstantInt::get(IntTy, FuncBBIndex[AddrTBB])
+                        : ConstantInt::get(IntTy, BBIndex[AddrTBB]);
 
-        auto FIndex = opt.level() ?
-                        ConstantInt::get(IntTy, FuncBBIndex[AddrFBB]) :
-                        ConstantInt::get(IntTy, BBIndex[AddrFBB]);
+        auto FIndex = opt.level()
+                        ? ConstantInt::get(IntTy, FuncBBIndex[AddrFBB])
+                        : ConstantInt::get(IntTy, BBIndex[AddrFBB]);
 
         auto NextIndex = IRB.CreateSelect(Cond, TIndex, FIndex);
 
@@ -196,7 +200,7 @@ struct IndirectBranch : public FunctionPass {
         buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1;
         buildDecrypt.PtrAuthDisc = 0;
 
-        auto TargetPtr = buildPageTableDecryptIR(buildDecrypt);
+        auto            TargetPtr = buildPageTableDecryptIR(buildDecrypt);
         IndirectBrInst *IBI = IndirectBrInst::Create(TargetPtr, 2);
         ReplaceInstWithInst(BI, IBI);
         IBI->addDestination(TBB);
@@ -223,7 +227,10 @@ struct IndirectBranch : public FunctionPass {
 } // anonymous namespace
 
 char IndirectBranch::ID = 0;
+
 FunctionPass *llvm::createIndirectBranchPass(ObfuscationOptions *argsOptions) {
   return new IndirectBranch(argsOptions);
 }
-INITIALIZE_PASS(IndirectBranch, "indbr", "Enable IR Indirect Branch Obfuscation", false, false)
+
+INITIALIZE_PASS(IndirectBranch, "indbr",
+                "Enable IR Indirect Branch Obfuscation", false, false)

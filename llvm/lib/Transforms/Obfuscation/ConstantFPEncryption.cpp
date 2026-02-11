@@ -1,4 +1,4 @@
-﻿#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
+#include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/Transforms/Obfuscation/ConstantFPEncryption.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -27,7 +27,7 @@ struct ConstantFPEncryption : public FunctionPass {
   ObfuscationOptions *ArgsOptions;
 
   DenseMap<Function *, SmallPtrSet<Instruction *, 16>> FunctionModifyIRs;
-  std::mt19937_64 RNG;
+  std::mt19937_64                                      RNG;
 
   ConstantFPEncryption(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
@@ -47,16 +47,16 @@ struct ConstantFPEncryption : public FunctionPass {
 
   bool doInitialization(Module &M) override {
     bool Changed = false;
-    for (auto& F : M) {
+    for (auto &F : M) {
       const auto opt = ArgsOptions->toObfuscate(ArgsOptions->cfeOpt(), &F);
       if (!opt.isEnabled()) {
         continue;
       }
       Changed |= expandConstantExpr(F);
-      for (auto& BB : F) {
-        for (auto& I : BB) {
+      for (auto &BB : F) {
+        for (auto &I : BB) {
           if (I.isEHPad() || isa<AllocaInst>(&I) ||
-              isa<IntrinsicInst>(&I) || isa<SwitchInst>(I)||
+              isa<IntrinsicInst>(&I) || isa<SwitchInst>(I) ||
               I.isAtomic()) {
             continue;
           }
@@ -64,17 +64,20 @@ struct ConstantFPEncryption : public FunctionPass {
           auto GEP = dyn_cast<GetElementPtrInst>(&I);
           auto PHI = dyn_cast<PHINode>(&I);
 
-          for (unsigned i = 0; i < (PHI ? PHI->getNumIncomingValues() : I.getNumOperands()); ++i) {
+          for (unsigned i = 0; i < (PHI
+                                      ? PHI->getNumIncomingValues()
+                                      : I.getNumOperands()); ++i) {
             if (CI && CI->isBundleOperand(i)) {
               continue;
             }
             if (GEP && (i < 2 || GEP->getSourceElementType()->isStructTy())) {
               continue;
             }
-            if (PHI && isa<SwitchInst>(PHI->getIncomingBlock(i)->getTerminator())) {
+            if (PHI && isa<SwitchInst>(
+                    PHI->getIncomingBlock(i)->getTerminator())) {
               continue;
             }
-            Value* Opr = PHI ? PHI->getIncomingValue(i) : I.getOperand(i);
+            Value *Opr = PHI ? PHI->getIncomingValue(i) : I.getOperand(i);
             if (isa<ConstantFP>(Opr)) {
               FunctionModifyIRs[&F].insert(&I);
               break;
@@ -91,7 +94,7 @@ struct ConstantFPEncryption : public FunctionPass {
     if (!opt.isEnabled()) {
       return false;
     }
-    auto& FuncModifyIRs = FunctionModifyIRs[&F];
+    auto &FuncModifyIRs = FunctionModifyIRs[&F];
     if (FuncModifyIRs.empty()) {
       return false;
     }
@@ -108,16 +111,17 @@ struct ConstantFPEncryption : public FunctionPass {
         if (GEP && i < 2) {
           continue;
         }
-        Value* Opr = I->getOperand(i);
+        Value *Opr = I->getOperand(i);
         if (auto CFP = dyn_cast<ConstantFP>(Opr)) {
-          if (PHI && isa<SwitchInst>(PHI->getIncomingBlock(i)->getTerminator())) {
+          if (PHI && isa<
+                SwitchInst>(PHI->getIncomingBlock(i)->getTerminator())) {
             continue;
           }
 
-          auto InsertPoint = PHI ?
-                               PHI->getIncomingBlock(i)->getTerminator() :
-                               I;
-          auto CipherConstant = encryptConstant(CFP, InsertPoint, RNG, opt.level());
+          auto InsertPoint =
+              PHI ? PHI->getIncomingBlock(i)->getTerminator() : I;
+          auto CipherConstant = encryptConstant(CFP, InsertPoint, RNG,
+                                                opt.level());
           if (PHI)
             PHI->setIncomingValue(i, CipherConstant);
           else

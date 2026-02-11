@@ -1,4 +1,4 @@
-﻿#include "llvm/IR/Constants.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Transforms/Obfuscation/IndirectCall.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
@@ -16,22 +16,23 @@
 #define DEBUG_TYPE "icall"
 
 using namespace llvm;
+
 namespace {
 struct IndirectCall : public FunctionPass {
-  static char ID;
+  static char         ID;
   ObfuscationOptions *ArgsOptions;
 
   DenseMap<Function *, SmallPtrSet<CallInst *, 8>> FunctionCallSites;
   DenseMap<Function *, SmallPtrSet<Function *, 8>> FunctionCallees;
 
-  std::vector<Constant *> Callees;
+  std::vector<Constant *>        Callees;
   DenseMap<Constant *, unsigned> CalleeIndex;
   // 63 - 32====31 - 0
   //  Mask=======Key
-  DenseMap<Constant *, uint64_t> CalleeKeys;
+  DenseMap<Constant *, uint64_t>   CalleeKeys;
   SmallVector<GlobalVariable *, 8> CalleePageTable;
-  std::mt19937_64 RNG;
-  uint64_t PtrEncKey = 0;
+  std::mt19937_64                  RNG;
+  uint64_t                         PtrEncKey = 0;
 
   bool RunOnFuncChanged = false;
 
@@ -47,7 +48,9 @@ struct IndirectCall : public FunctionPass {
     RNG = std::mt19937_64(seed);
   }
 
-  StringRef getPassName() const override { return {"IndirectCall"}; }
+  StringRef getPassName() const override {
+    return {"IndirectCall"};
+  }
 
   void NumberCallees(Module &M) {
     for (auto &F : M) {
@@ -61,7 +64,8 @@ struct IndirectCall : public FunctionPass {
             auto CB = dyn_cast<CallBase>(&I);
             auto Callee = CB->getCalledFunction();
             if (Callee == nullptr) {
-              Callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+              Callee = dyn_cast<Function>(
+                  CB->getCalledOperand()->stripPointerCasts());
               if (!Callee) {
                 continue;
               }
@@ -100,7 +104,7 @@ struct IndirectCall : public FunctionPass {
 
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
-    createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectCallee" ;
+    createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectCallee";
     createPageTableArgs.RNG = &RNG;
     createPageTableArgs.M = &M;
     createPageTableArgs.Objects = &Callees;
@@ -119,19 +123,19 @@ struct IndirectCall : public FunctionPass {
       return false;
     }
 
-    auto& M = *Fn.getParent();
+    auto &M = *Fn.getParent();
 
     if (Callees.empty()) {
       return false;
     }
-    const auto& CallSites = FunctionCallSites[&Fn];
-    auto& FuncCalleesSet = FunctionCallees[&Fn];
+    const auto &CallSites = FunctionCallSites[&Fn];
+    auto &      FuncCalleesSet = FunctionCallees[&Fn];
 
     if (CallSites.empty() || FuncCalleesSet.empty()) {
       return false;
     }
 
-    std::vector<Constant *> FuncCallees;
+    std::vector<Constant *>        FuncCallees;
     DenseMap<Constant *, uint64_t> FuncKeys;
     for (auto callee : FuncCalleesSet) {
       FuncCallees.push_back(callee);
@@ -139,12 +143,13 @@ struct IndirectCall : public FunctionPass {
     }
 
     SmallVector<GlobalVariable *, 8> FuncCalleePageTable;
-    DenseMap<Constant *, unsigned> FuncCalleeIndex;
+    DenseMap<Constant *, unsigned>   FuncCalleeIndex;
 
     if (opt.level()) {
       CreatePageTableArgs createPageTableArgs;
       createPageTableArgs.CountLoop = opt.level();
-      createPageTableArgs.GVNamePrefix = M.getName().str() + Fn.getName().str() + "_IndirectCallee" ;
+      createPageTableArgs.GVNamePrefix =
+          M.getName().str() + Fn.getName().str() + "_IndirectCallee";
       createPageTableArgs.RNG = &RNG;
       createPageTableArgs.M = &M;
       createPageTableArgs.Objects = &FuncCallees;
@@ -161,7 +166,8 @@ struct IndirectCall : public FunctionPass {
 
       Function *Callee = CB->getCalledFunction();
       if (Callee == nullptr) {
-        Callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+        Callee = dyn_cast<
+          Function>(CB->getCalledOperand()->stripPointerCasts());
         if (!Callee) {
           continue;
         }
@@ -169,9 +175,9 @@ struct IndirectCall : public FunctionPass {
 
       BuildDecryptArgs buildDecrypt;
       buildDecrypt.FuncLoopCount = opt.level();
-      buildDecrypt.NextIndex = opt.level() ?
-                                 FuncCalleeIndex[Callee] :
-                                 CalleeIndex[Callee];
+      buildDecrypt.NextIndex = opt.level()
+                                 ? FuncCalleeIndex[Callee]
+                                 : CalleeIndex[Callee];
       buildDecrypt.NextIndexValue = nullptr;
       buildDecrypt.Fn = &Fn;
       buildDecrypt.InsertBefore = CB;
@@ -185,7 +191,6 @@ struct IndirectCall : public FunctionPass {
       buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1; // IA for code pointers
       buildDecrypt.PtrAuthDisc = 0;
 
-
       auto FnPtr = buildPageTableDecryptIR(buildDecrypt);
       FnPtr->setName("Call_" + Callee->getName());
       CB->setCalledOperand(FnPtr);
@@ -195,7 +200,7 @@ struct IndirectCall : public FunctionPass {
     return true;
   }
 
-  bool doFinalization(Module & M) override {
+  bool doFinalization(Module &M) override {
     if (!RunOnFuncChanged || CalleePageTable.empty()) {
       return false;
     }
@@ -209,8 +214,10 @@ struct IndirectCall : public FunctionPass {
 } // anonymous namespace
 
 char IndirectCall::ID = 0;
+
 FunctionPass *llvm::createIndirectCallPass(ObfuscationOptions *argsOptions) {
   return new IndirectCall(argsOptions);
 }
 
-INITIALIZE_PASS(IndirectCall, "icall", "Enable IR Indirect Call Obfuscation", false, false)
+INITIALIZE_PASS(IndirectCall, "icall", "Enable IR Indirect Call Obfuscation",
+                false, false)

@@ -2,12 +2,12 @@
 #define OBFUSCATION_CONSTANT_INT_ENCRYPTION_H
 
 namespace llvm {
-  class FunctionPass;
-  class PassRegistry;
-  class ObfuscationOptions;
+class FunctionPass;
+class PassRegistry;
+class ObfuscationOptions;
 
-  FunctionPass* createConstantIntEncryptionPass(ObfuscationOptions *argsOptions);
-  void initializeConstantIntEncryptionPass(PassRegistry &Registry);
+FunctionPass *createConstantIntEncryptionPass(ObfuscationOptions *argsOptions);
+void          initializeConstantIntEncryptionPass(PassRegistry &Registry);
 
 }
 

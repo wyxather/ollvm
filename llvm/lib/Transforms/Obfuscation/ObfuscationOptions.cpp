@@ -108,7 +108,7 @@ std::shared_ptr<ObfuscationOptions> ObfuscationOptions::readConfigFile(
     if (obj.getFirst().str() == "randomSeed") {
       if (auto objStr = obj.getSecond().getAsString()) {
         const auto &seedStr = objStr.value();
-        auto &seed = result->randomSeed();
+        auto &      seed = result->randomSeed();
         seed = seedStr;
         seed.resize(32, 0);
       }
@@ -122,7 +122,7 @@ std::shared_ptr<ObfuscationOptions> ObfuscationOptions::readConfigFile(
     }
     if (!objHit) {
       llvm::errs() << "warning: unknown hikari config node: "
-        << obj.getFirst().str() << '\n';
+          << obj.getFirst().str() << '\n';
     }
   }
   return result;

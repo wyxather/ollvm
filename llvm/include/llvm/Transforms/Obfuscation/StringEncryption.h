@@ -6,8 +6,8 @@ class ModulePass;
 class PassRegistry;
 class ObfuscationOptions;
 
-ModulePass* createStringEncryptionPass(ObfuscationOptions *argsOptions);
-void initializeStringEncryptionPass(PassRegistry &Registry);
+ModulePass *createStringEncryptionPass(ObfuscationOptions *argsOptions);
+void        initializeStringEncryptionPass(PassRegistry &Registry);
 
 }
 

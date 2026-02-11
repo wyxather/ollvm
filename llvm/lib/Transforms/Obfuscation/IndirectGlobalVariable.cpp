@@ -1,4 +1,4 @@
-﻿#include "llvm/IR/Constants.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Transforms/Obfuscation/IndirectGlobalVariable.h"
@@ -16,21 +16,22 @@
 #define DEBUG_TYPE "indgv"
 
 using namespace llvm;
+
 namespace {
 struct IndirectGlobalVariable : public FunctionPass {
-  static char ID;
+  static char         ID;
   ObfuscationOptions *ArgsOptions;
 
   DenseMap<Function *, SmallPtrSet<GlobalVariable *, 8>> FunctionGVs;
 
-  std::vector<Constant *> GlobalVariables;
-  DenseMap<Constant *, unsigned> GVIndex;
-  DenseMap<Constant *, uint64_t> GVKeys;
+  std::vector<Constant *>          GlobalVariables;
+  DenseMap<Constant *, unsigned>   GVIndex;
+  DenseMap<Constant *, uint64_t>   GVKeys;
   SmallVector<GlobalVariable *, 8> GVPageTable;
 
   std::mt19937_64 RNG;
-  uint64_t PtrEncKey = 0;
-  bool RunOnFuncChanged = false;
+  uint64_t        PtrEncKey = 0;
+  bool            RunOnFuncChanged = false;
 
   IndirectGlobalVariable(ObfuscationOptions *argsOptions) : FunctionPass(ID) {
     this->ArgsOptions = argsOptions;
@@ -44,7 +45,9 @@ struct IndirectGlobalVariable : public FunctionPass {
     RNG = std::mt19937_64(seed);
   }
 
-  StringRef getPassName() const override { return {"IndirectGlobalVariable"}; }
+  StringRef getPassName() const override {
+    return {"IndirectGlobalVariable"};
+  }
 
   void NumberGlobalVariable(Module &M) {
     for (auto &F : M) {
@@ -53,7 +56,7 @@ struct IndirectGlobalVariable : public FunctionPass {
       }
       LowerConstantExpr(F);
       for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-        Instruction *Inst  = &*I;
+        Instruction *Inst = &*I;
 
         if (Inst->isEHPad() || isa<CallInst>(Inst)) {
           continue;
@@ -96,7 +99,7 @@ struct IndirectGlobalVariable : public FunctionPass {
 
     CreatePageTableArgs createPageTableArgs;
     createPageTableArgs.CountLoop = 1;
-    createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectGVs" ;
+    createPageTableArgs.GVNamePrefix = M.getName().str() + "_IndirectGVs";
     createPageTableArgs.RNG = &RNG;
     createPageTableArgs.M = &M;
     createPageTableArgs.Objects = &GlobalVariables;
@@ -116,18 +119,18 @@ struct IndirectGlobalVariable : public FunctionPass {
       return false;
     }
 
-    auto& M = *Fn.getParent();
+    auto &M = *Fn.getParent();
 
     if (GlobalVariables.empty()) {
       return false;
     }
 
-    auto& FuncGVSet = FunctionGVs[&Fn];
+    auto &FuncGVSet = FunctionGVs[&Fn];
     if (FuncGVSet.empty()) {
       return false;
     }
 
-    std::vector<Constant *> FuncGVs;
+    std::vector<Constant *>        FuncGVs;
     DenseMap<Constant *, uint64_t> FuncKeys;
     for (auto GV : FuncGVSet) {
       FuncGVs.push_back(GV);
@@ -135,12 +138,13 @@ struct IndirectGlobalVariable : public FunctionPass {
     }
 
     SmallVector<GlobalVariable *, 8> FuncGVPageTable;
-    DenseMap<Constant *, unsigned> FuncGVIndex;
+    DenseMap<Constant *, unsigned>   FuncGVIndex;
 
     if (opt.level()) {
       CreatePageTableArgs createPageTableArgs;
       createPageTableArgs.CountLoop = opt.level();
-      createPageTableArgs.GVNamePrefix = M.getName().str() + Fn.getName().str() + "_IndirectGVs" ;
+      createPageTableArgs.GVNamePrefix =
+          M.getName().str() + Fn.getName().str() + "_IndirectGVs";
       createPageTableArgs.RNG = &RNG;
       createPageTableArgs.M = &M;
       createPageTableArgs.Objects = &FuncGVs;
@@ -153,25 +157,27 @@ struct IndirectGlobalVariable : public FunctionPass {
 
     for (inst_iterator I = inst_begin(Fn), E = inst_end(Fn); I != E; ++I) {
       Instruction *Inst = &*I;
-      if (isa<CallInst>(Inst) || isa<CatchReturnInst>(Inst) || isa<ResumeInst>(Inst) || Inst->isEHPad()) {
+      if (isa<CallInst>(Inst) || isa<CatchReturnInst>(Inst) || isa<
+            ResumeInst>(Inst) || Inst->isEHPad()) {
         continue;
       }
 
       for (unsigned i = 0; i < Inst->getNumOperands(); ++i) {
-        if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Inst->getOperand(i))) {
+        if (GlobalVariable *GV = dyn_cast<
+          GlobalVariable>(Inst->getOperand(i))) {
           if (!GVIndex.count(GV)) {
             continue;
           }
 
           auto PHI = dyn_cast<PHINode>(Inst);
-          auto InsertPoint = PHI ? PHI->getIncomingBlock(i)->getTerminator() : Inst;
+          auto InsertPoint = PHI
+                               ? PHI->getIncomingBlock(i)->getTerminator()
+                               : Inst;
           IRBuilder<> IRB(InsertPoint);
 
           BuildDecryptArgs buildDecrypt;
           buildDecrypt.FuncLoopCount = opt.level();
-          buildDecrypt.NextIndex = opt.level() ?
-                                     FuncGVIndex[GV] :
-                                     GVIndex[GV];
+          buildDecrypt.NextIndex = opt.level() ? FuncGVIndex[GV] : GVIndex[GV];
           buildDecrypt.NextIndexValue = nullptr;
           buildDecrypt.Fn = &Fn;
           buildDecrypt.InsertBefore = InsertPoint;
@@ -197,6 +203,7 @@ struct IndirectGlobalVariable : public FunctionPass {
 
     return true;
   }
+
   bool doFinalization(Module &M) override {
     if (!RunOnFuncChanged || GVPageTable.empty()) {
       return false;
@@ -207,12 +214,15 @@ struct IndirectGlobalVariable : public FunctionPass {
     return true;
   }
 
-  };
+};
 } // anonymous namespace
 
 char IndirectGlobalVariable::ID = 0;
-FunctionPass *llvm::createIndirectGlobalVariablePass(ObfuscationOptions *argsOptions) {
+
+FunctionPass *llvm::createIndirectGlobalVariablePass(
+    ObfuscationOptions *argsOptions) {
   return new IndirectGlobalVariable(argsOptions);
 }
 
-INITIALIZE_PASS(IndirectGlobalVariable, "indgv", "Enable IR Indirect Global Variable Obfuscation", false, false)
+INITIALIZE_PASS(IndirectGlobalVariable, "indgv",
+                "Enable IR Indirect Global Variable Obfuscation", false, false)
