@@ -66,8 +66,8 @@ vcpkg install libxml2:x64-windows-static
 run x64 Native Tools Command Prompt for VS
 run:
 
-mkdir build_ninja
-cd build_ninja
+mkdir build_vsproj
+cd build_vsproj
 
 cmake -DCMAKE_CXX_FLAGS="/utf-8 /EHsc" ^
       -DCMAKE_C_FLAGS="/utf-8" ^
