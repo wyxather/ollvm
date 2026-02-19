@@ -625,7 +625,6 @@ bool StringEncryption::processConstantStringUse(Function *F) {
   if (!opt.isEnabled()) {
     return false;
   }
-  LLVMContext &Ctx = F->getContext();
   LowerConstantExpr(*F);
   SmallPtrSet<GlobalVariable *, 16> DecryptedGV;
   // if GV has multiple use in a block, decrypt only at the first use
