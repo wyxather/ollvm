@@ -1,5 +1,5 @@
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
-#include "llvm/Transforms/Obfuscation/StringEncryption.h"
+#include "llvm/Transforms/Obfuscation/MicrosoftRTTIEraser.h"
 #include "llvm/Transforms/Obfuscation/Utils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
 #include "llvm/Transforms/IPO/Attributor.h"
@@ -11,7 +11,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/BLAKE3.h"
-#include "llvm/Transforms/Obfuscation/MicrosoftRTTIEraser.h"
 
 #define DEBUG_TYPE "ms_rtti_eraser"
 
@@ -29,7 +28,7 @@ public:
 
   MsRttiEraser(ObfuscationOptions *argsOptions) : ModulePass(ID) {
     this->ArgsOptions = argsOptions;
-    initializeStringEncryptionPass(*PassRegistry::getPassRegistry());
+    initializeMsRttiEraserPass(*PassRegistry::getPassRegistry());
   }
 
   StringRef getPassName() const override {
@@ -73,7 +72,13 @@ public:
       Constant *newRttiNameConstant = ConstantDataArray::getString(
           ctx, newRttiName, newRttiName[newRttiName.size() - 1] != '\0');
 
-      initStruct->setOperand(2, newRttiNameConstant);
+      SmallVector<Constant *, 4> Ops;
+      for (unsigned k = 0; k < initStruct->getNumOperands(); ++k)
+        Ops.push_back(initStruct->getOperand(k));
+      Ops[2] = newRttiNameConstant;
+      gv.setInitializer(ConstantStruct::get(initStruct->getType(), Ops));
+      rttiDA->destroyConstant();
+
       changed = true;
     }
     return changed;
@@ -87,12 +92,13 @@ public:
     SmallString<512> passwd;
     passwd.append(ArgsOptions->randomSeed());
     passwd.append(rtti);
+    Blake3.init();
     Blake3.update(passwd);
     const auto hash = Blake3.final();
 
     SmallString<256> result = rtti;
 
-    for (int i = 4; i < result.size(); ++i) {
+    for (size_t i = 4; i < result.size(); ++i) {
       const char currentChar = result[i];
       if (currentChar == '\0') {
         break;

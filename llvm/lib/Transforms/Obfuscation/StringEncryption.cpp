@@ -157,7 +157,7 @@ bool StringEncryption::runOnModule(Module &M) {
         GlobalVariable *DecStatus = new GlobalVariable(
             M, Type::getInt32Ty(Ctx), false, GlobalValue::PrivateLinkage,
             Zero, "dec_status_" + Twine::utohexstr(Entry->ID) + GV.getName());
-        DecGV->setAlignment(MaybeAlign(GV.getAlignment()));
+        DecGV->setAlignment(GV.getAlign());
         Entry->DecGV = DecGV;
         Entry->DecStatus = DecStatus;
         ConstantStringPool.push_back(Entry);
@@ -184,7 +184,7 @@ bool StringEncryption::runOnModule(Module &M) {
           GlobalVariable *DecStatus = new GlobalVariable(
               M, Type::getInt32Ty(Ctx), false, GlobalValue::PrivateLinkage,
               Zero, "dec_status_" + Twine::utohexstr(Entry->ID) + GV.getName());
-          DecGV->setAlignment(MaybeAlign(GV.getAlignment()));
+          DecGV->setAlignment(GV.getAlign());
           Entry->DecGV = DecGV;
           Entry->DecStatus = DecStatus;
           ConstantStringPool.push_back(Entry);
@@ -263,7 +263,7 @@ bool StringEncryption::runOnModule(Module &M) {
       GlobalVariable *DecGV = new GlobalVariable(
           M, EltType, false, GlobalValue::PrivateLinkage,
           ZeroInit, "dec_" + GV->getName());
-      DecGV->setAlignment(MaybeAlign(GV->getAlignment()));
+      DecGV->setAlignment(GV->getAlign());
       GlobalVariable *DecStatus = new GlobalVariable(
           M, Type::getInt32Ty(Ctx), false, GlobalValue::PrivateLinkage,
           Zero, "dec_status_" + GV->getName());
@@ -664,8 +664,7 @@ bool StringEncryption::processConstantStringUse(Function *F) {
                                                 getTerminator();
                 IRBuilder<> IRB(InsertPoint);
 
-                Value *OutBuf = IRB.CreateBitCast(Entry->DecGV,
-                                                  PointerType::getUnqual(Ctx));
+                Value *OutBuf = Entry->DecGV;
                 Value *Data = IRB.CreateInBoundsGEP(
                     EncryptedStringTable->getValueType(),
                     EncryptedStringTable,
@@ -729,8 +728,7 @@ bool StringEncryption::processConstantStringUse(Function *F) {
                                            getFirstInsertionPt()
                                   : &Inst);
 
-                Value *OutBuf = IRB.CreateBitCast(Entry->DecGV,
-                                                  PointerType::getUnqual(Ctx));
+                Value *OutBuf = Entry->DecGV;
                 Value *Data = IRB.CreateInBoundsGEP(
                     EncryptedStringTable->getValueType(),
                     EncryptedStringTable,

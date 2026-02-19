@@ -82,6 +82,7 @@ namespace llvm {
 struct ObfuscationPassManager : public ModulePass {
   static char            ID; // Pass identification
   SmallVector<Pass *, 8> Passes;
+  std::shared_ptr<ObfuscationOptions> Options;
 
   ObfuscationPassManager() : ModulePass(ID) {
     initializeObfuscationPassManagerPass(*PassRegistry::getPassRegistry());
@@ -97,6 +98,7 @@ struct ObfuscationPassManager : public ModulePass {
       Change |= P->doFinalization(M);
       delete (P);
     }
+    Options.reset();
     return Change;
   }
 
@@ -164,6 +166,7 @@ struct ObfuscationPassManager : public ModulePass {
     }
 
     const auto Options(getOptions());
+    this->Options = Options;
     unsigned   pointerSize = M.getDataLayout().getTypeAllocSize(
         PointerType::getUnqual(M.getContext()));
 
