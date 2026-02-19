@@ -77,7 +77,6 @@ public:
         Ops.push_back(initStruct->getOperand(k));
       Ops[2] = newRttiNameConstant;
       gv.setInitializer(ConstantStruct::get(initStruct->getType(), Ops));
-      rttiDA->destroyConstant();
 
       changed = true;
     }
