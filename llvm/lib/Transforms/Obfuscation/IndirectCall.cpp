@@ -160,6 +160,65 @@ struct IndirectCall : public FunctionPass {
       enhancedPageTable(createPageTableArgs, &FuncCalleeIndex);
     }
 
+    // Count callee references for deduplication
+    DenseMap<Function *, unsigned> CalleeUseCount;
+    for (auto CI : CallSites) {
+      CallBase *CB = CI;
+      Function *Callee = CB->getCalledFunction();
+      if (!Callee)
+        Callee = dyn_cast<Function>(
+            CB->getCalledOperand()->stripPointerCasts());
+      if (Callee)
+        CalleeUseCount[Callee]++;
+    }
+
+    // Pre-decrypt duplicate callees at function entry
+    DenseMap<Function *, AllocaInst *> CalleeDedupCache;
+    auto &EntryBB = Fn.getEntryBlock();
+    Instruction *AllocaInsertPt = &*EntryBB.begin();
+    auto *PtrTy = PointerType::getUnqual(Fn.getContext());
+    for (auto &KV : CalleeUseCount) {
+      if (KV.second <= 1)
+        continue;
+      IRBuilder<> AIB(AllocaInsertPt);
+      CalleeDedupCache[KV.first] = AIB.CreateAlloca(PtrTy, nullptr);
+    }
+
+    if (!CalleeDedupCache.empty()) {
+      Instruction *DecryptPt = nullptr;
+      for (auto &I : EntryBB) {
+        if (!isa<AllocaInst>(&I)) {
+          DecryptPt = &I;
+          break;
+        }
+      }
+      if (!DecryptPt)
+        DecryptPt = EntryBB.getTerminator();
+      Triple T(M.getTargetTriple());
+      for (auto &KV : CalleeDedupCache) {
+        Function *       Callee = KV.first;
+        BuildDecryptArgs buildDecrypt;
+        buildDecrypt.FuncLoopCount = opt.level();
+        buildDecrypt.NextIndex = opt.level()
+                                   ? FuncCalleeIndex[Callee]
+                                   : CalleeIndex[Callee];
+        buildDecrypt.NextIndexValue = nullptr;
+        buildDecrypt.Fn = &Fn;
+        buildDecrypt.InsertBefore = DecryptPt;
+        buildDecrypt.LoadTy = Callee->getType();
+        buildDecrypt.ModulePageTable = &CalleePageTable;
+        buildDecrypt.FuncPageTable = &FuncCalleePageTable;
+        buildDecrypt.ModuleKey = CalleeKeys[Callee];
+        buildDecrypt.FuncKey = FuncKeys[Callee];
+        buildDecrypt.PtrEncKey = PtrEncKey;
+        buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1;
+        buildDecrypt.PtrAuthDisc = 0;
+        auto        DecPtr = buildPageTableDecryptIR(buildDecrypt);
+        IRBuilder<> SIB(DecryptPt);
+        SIB.CreateAlignedStore(DecPtr, KV.second, Align{1}, true);
+      }
+    }
+
     for (auto CI : CallSites) {
 
       CallBase *CB = CI;
@@ -173,27 +232,35 @@ struct IndirectCall : public FunctionPass {
         }
       }
 
-      BuildDecryptArgs buildDecrypt;
-      buildDecrypt.FuncLoopCount = opt.level();
-      buildDecrypt.NextIndex = opt.level()
-                                 ? FuncCalleeIndex[Callee]
-                                 : CalleeIndex[Callee];
-      buildDecrypt.NextIndexValue = nullptr;
-      buildDecrypt.Fn = &Fn;
-      buildDecrypt.InsertBefore = CB;
-      buildDecrypt.LoadTy = Callee->getType();
-      buildDecrypt.ModulePageTable = &CalleePageTable;
-      buildDecrypt.FuncPageTable = &FuncCalleePageTable;
-      buildDecrypt.ModuleKey = CalleeKeys[Callee];
-      buildDecrypt.FuncKey = FuncKeys[Callee];
-      buildDecrypt.PtrEncKey = PtrEncKey;
-      Triple T(M.getTargetTriple());
-      buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1; // IA for code pointers
-      buildDecrypt.PtrAuthDisc = 0;
-
-      auto FnPtr = buildPageTableDecryptIR(buildDecrypt);
-      FnPtr->setName("Call_" + Callee->getName());
-      CB->setCalledOperand(FnPtr);
+      auto CacheIt = CalleeDedupCache.find(Callee);
+      if (CacheIt != CalleeDedupCache.end()) {
+        IRBuilder<> IRB(CB);
+        auto        FnPtr = IRB.CreateAlignedLoad(
+            Callee->getType(), CacheIt->second, Align{1}, true);
+        FnPtr->setName("Call_" + Callee->getName());
+        CB->setCalledOperand(FnPtr);
+      } else {
+        BuildDecryptArgs buildDecrypt;
+        buildDecrypt.FuncLoopCount = opt.level();
+        buildDecrypt.NextIndex = opt.level()
+                                   ? FuncCalleeIndex[Callee]
+                                   : CalleeIndex[Callee];
+        buildDecrypt.NextIndexValue = nullptr;
+        buildDecrypt.Fn = &Fn;
+        buildDecrypt.InsertBefore = CB;
+        buildDecrypt.LoadTy = Callee->getType();
+        buildDecrypt.ModulePageTable = &CalleePageTable;
+        buildDecrypt.FuncPageTable = &FuncCalleePageTable;
+        buildDecrypt.ModuleKey = CalleeKeys[Callee];
+        buildDecrypt.FuncKey = FuncKeys[Callee];
+        buildDecrypt.PtrEncKey = PtrEncKey;
+        Triple T(M.getTargetTriple());
+        buildDecrypt.PtrAuthKey = T.isAArch64() ? 0 : -1;
+        buildDecrypt.PtrAuthDisc = 0;
+        auto FnPtr = buildPageTableDecryptIR(buildDecrypt);
+        FnPtr->setName("Call_" + Callee->getName());
+        CB->setCalledOperand(FnPtr);
+      }
     }
 
     RunOnFuncChanged = true;

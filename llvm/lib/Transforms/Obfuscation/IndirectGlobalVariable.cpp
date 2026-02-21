@@ -155,6 +155,66 @@ struct IndirectGlobalVariable : public FunctionPass {
       enhancedPageTable(createPageTableArgs, &FuncGVIndex);
     }
 
+    // Count GV references for deduplication
+    DenseMap<GlobalVariable *, unsigned> GVUseCount;
+    for (inst_iterator I = inst_begin(Fn), E = inst_end(Fn); I != E; ++I) {
+      Instruction *Inst = &*I;
+      if (isa<CallInst>(Inst) || isa<CatchReturnInst>(Inst) ||
+          isa<ResumeInst>(Inst) || Inst->isEHPad())
+        continue;
+      for (unsigned i = 0; i < Inst->getNumOperands(); ++i) {
+        if (auto *GV = dyn_cast<GlobalVariable>(Inst->getOperand(i))) {
+          if (GVIndex.count(GV))
+            GVUseCount[GV]++;
+        }
+      }
+    }
+
+    // Pre-decrypt duplicate GVs at function entry
+    DenseMap<GlobalVariable *, AllocaInst *> GVDedupCache;
+    auto &EntryBB = Fn.getEntryBlock();
+    Instruction *AllocaInsertPt = &*EntryBB.begin();
+    auto *PtrTy = PointerType::getUnqual(Fn.getContext());
+    for (auto &KV : GVUseCount) {
+      if (KV.second <= 1)
+        continue;
+      IRBuilder<> AIB(AllocaInsertPt);
+      GVDedupCache[KV.first] = AIB.CreateAlloca(PtrTy, nullptr);
+    }
+
+    if (!GVDedupCache.empty()) {
+      Instruction *DecryptPt = nullptr;
+      for (auto &I : EntryBB) {
+        if (!isa<AllocaInst>(&I)) {
+          DecryptPt = &I;
+          break;
+        }
+      }
+      if (!DecryptPt)
+        DecryptPt = EntryBB.getTerminator();
+      Triple T(M.getTargetTriple());
+      for (auto &KV : GVDedupCache) {
+        auto *           GV = KV.first;
+        BuildDecryptArgs buildDecrypt;
+        buildDecrypt.FuncLoopCount = opt.level();
+        buildDecrypt.NextIndex = opt.level() ? FuncGVIndex[GV] : GVIndex[GV];
+        buildDecrypt.NextIndexValue = nullptr;
+        buildDecrypt.Fn = &Fn;
+        buildDecrypt.InsertBefore = DecryptPt;
+        buildDecrypt.LoadTy = GV->getType();
+        buildDecrypt.ModulePageTable = &GVPageTable;
+        buildDecrypt.FuncPageTable = &FuncGVPageTable;
+        buildDecrypt.ModuleKey = GVKeys[GV];
+        buildDecrypt.FuncKey = FuncKeys[GV];
+        buildDecrypt.PtrEncKey = PtrEncKey;
+        buildDecrypt.PtrAuthKey = T.isAArch64() ? 2 : -1;
+        buildDecrypt.PtrAuthDisc = 0;
+        auto        GVPtr = buildPageTableDecryptIR(buildDecrypt);
+        IRBuilder<> SIB(DecryptPt);
+        SIB.CreateAlignedStore(GVPtr, KV.second, Align{1}, true);
+      }
+    }
+
     for (inst_iterator I = inst_begin(Fn), E = inst_end(Fn); I != E; ++I) {
       Instruction *Inst = &*I;
       if (isa<CallInst>(Inst) || isa<CatchReturnInst>(Inst) || isa<
@@ -173,25 +233,33 @@ struct IndirectGlobalVariable : public FunctionPass {
           auto InsertPoint = PHI
                                ? PHI->getIncomingBlock(i)->getTerminator()
                                : Inst;
-          IRBuilder<> IRB(InsertPoint);
 
-          BuildDecryptArgs buildDecrypt;
-          buildDecrypt.FuncLoopCount = opt.level();
-          buildDecrypt.NextIndex = opt.level() ? FuncGVIndex[GV] : GVIndex[GV];
-          buildDecrypt.NextIndexValue = nullptr;
-          buildDecrypt.Fn = &Fn;
-          buildDecrypt.InsertBefore = InsertPoint;
-          buildDecrypt.LoadTy = GV->getType();
-          buildDecrypt.ModulePageTable = &GVPageTable;
-          buildDecrypt.FuncPageTable = &FuncGVPageTable;
-          buildDecrypt.ModuleKey = GVKeys[GV];
-          buildDecrypt.FuncKey = FuncKeys[GV];
-          buildDecrypt.PtrEncKey = PtrEncKey;
-          Triple T(M.getTargetTriple());
-          buildDecrypt.PtrAuthKey = T.isAArch64() ? 2 : -1;
-          buildDecrypt.PtrAuthDisc = 0;
+          Value *GVPtr;
+          auto   CacheIt = GVDedupCache.find(GV);
+          if (CacheIt != GVDedupCache.end()) {
+            IRBuilder<> IRB(InsertPoint);
+            GVPtr = IRB.CreateAlignedLoad(
+                GV->getType(), CacheIt->second, Align{1}, true);
+          } else {
+            BuildDecryptArgs buildDecrypt;
+            buildDecrypt.FuncLoopCount = opt.level();
+            buildDecrypt.NextIndex =
+                opt.level() ? FuncGVIndex[GV] : GVIndex[GV];
+            buildDecrypt.NextIndexValue = nullptr;
+            buildDecrypt.Fn = &Fn;
+            buildDecrypt.InsertBefore = InsertPoint;
+            buildDecrypt.LoadTy = GV->getType();
+            buildDecrypt.ModulePageTable = &GVPageTable;
+            buildDecrypt.FuncPageTable = &FuncGVPageTable;
+            buildDecrypt.ModuleKey = GVKeys[GV];
+            buildDecrypt.FuncKey = FuncKeys[GV];
+            buildDecrypt.PtrEncKey = PtrEncKey;
+            Triple T(M.getTargetTriple());
+            buildDecrypt.PtrAuthKey = T.isAArch64() ? 2 : -1;
+            buildDecrypt.PtrAuthDisc = 0;
+            GVPtr = buildPageTableDecryptIR(buildDecrypt);
+          }
 
-          auto GVPtr = buildPageTableDecryptIR(buildDecrypt);
           if (PHI)
             PHI->setIncomingValue(i, GVPtr);
           else
