@@ -290,7 +290,7 @@ void createPageTable(const CreatePageTableArgs &args) {
       const auto ObjMask = static_cast<uint32_t>(ObjFullKey >> 32);
 
       APInt preIndex(BitWidth, args.IndexMap->at(Obj));
-      for (unsigned k = 0; k < 8; ++k) {
+      for (unsigned k = 0; k < 4; ++k) {
         const auto mask = static_cast<uint8_t>(ObjMask >> (k * 4)) % 16u;
         maskCipher(mask, preIndex, ObjFullKey, j);
       }
@@ -335,7 +335,7 @@ void enhancedPageTable(const CreatePageTableArgs &     args,
                        ? args.IndexMap->at(Obj)
                        : FuncIndexMap->at(Obj));
 
-      for (unsigned k = 0; k < 4 * args.CountLoop; ++k) {
+      for (unsigned k = 0; k < 2 * args.CountLoop; ++k) {
         const auto mask = static_cast<uint8_t>(ObjMask >> (k * 4)) % 16u;
         maskCipher(mask, preIndex, ObjFullKey, j);
       }
@@ -482,7 +482,7 @@ Value *buildPageTableDecryptIR(const BuildDecryptArgs &args) {
           {Zero, NextIndex});
       NextIndex = IRB.CreateLoad(IntTy, GEP);
       SmallVector<uint8_t, 16> maskIndex;
-      for (unsigned j = 0; j < 4 * args.FuncLoopCount; ++j) {
+      for (unsigned j = 0; j < 2 * args.FuncLoopCount; ++j) {
         auto mask = static_cast<uint8_t>(FuncMask >> (j * 4)) % 16u;
         maskIndex.push_back(mask);
       }
@@ -504,7 +504,7 @@ Value *buildPageTableDecryptIR(const BuildDecryptArgs &args) {
     if (i) {
       NextIndex = IRB.CreateLoad(IntTy, GEP);
       SmallVector<uint8_t, 16> maskIndex;
-      for (unsigned j = 0; j < 8; ++j) {
+      for (unsigned j = 0; j < 4; ++j) {
         auto mask = static_cast<uint8_t>(ModuleMask >> (j * 4)) % 16u;
         maskIndex.push_back(mask);
       }

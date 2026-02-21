@@ -99,6 +99,60 @@ struct ConstantFPEncryption : public FunctionPass {
       return false;
     }
 
+    // Count constant occurrences for deduplication
+    DenseMap<ConstantFP *, unsigned> ConstUseCount;
+    for (auto I : FuncModifyIRs) {
+      auto CI = dyn_cast<CallInst>(I);
+      auto GEP = dyn_cast<GetElementPtrInst>(I);
+      auto PHI = dyn_cast<PHINode>(I);
+      for (unsigned i = 0; i < I->getNumOperands(); ++i) {
+        if (CI && CI->isBundleOperand(i))
+          continue;
+        if (GEP && i < 2)
+          continue;
+        if (auto CFP = dyn_cast<ConstantFP>(I->getOperand(i))) {
+          if (PHI &&
+              isa<SwitchInst>(PHI->getIncomingBlock(i)->getTerminator()))
+            continue;
+          ConstUseCount[CFP]++;
+        }
+      }
+    }
+
+    // Pre-encrypt duplicate constants at function entry to avoid
+    // creating redundant GlobalVariables and decrypt sequences
+    DenseMap<ConstantFP *, AllocaInst *> DedupCache;
+    auto &EntryBB = F.getEntryBlock();
+    Instruction *AllocaInsertPt = &*EntryBB.begin();
+    for (auto &KV : ConstUseCount) {
+      if (KV.second <= 1)
+        continue;
+      auto *CFP = KV.first;
+      auto *Ty = CFP->getType();
+      auto BitWidth = Ty->getPrimitiveSizeInBits().getFixedValue();
+      if (BitWidth < 8)
+        continue;
+      IRBuilder<NoFolder> AIB(AllocaInsertPt);
+      DedupCache[CFP] = AIB.CreateAlloca(Ty, nullptr);
+    }
+
+    if (!DedupCache.empty()) {
+      Instruction *DecryptPt = nullptr;
+      for (auto &I : EntryBB) {
+        if (!isa<AllocaInst>(&I)) {
+          DecryptPt = &I;
+          break;
+        }
+      }
+      if (!DecryptPt)
+        DecryptPt = EntryBB.getTerminator();
+      for (auto &KV : DedupCache) {
+        Value *Dec = encryptConstant(KV.first, DecryptPt, RNG, opt.level());
+        IRBuilder<NoFolder> SIB(DecryptPt);
+        SIB.CreateAlignedStore(Dec, KV.second, Align{1}, true);
+      }
+    }
+
     for (auto I : FuncModifyIRs) {
       auto CI = dyn_cast<CallInst>(I);
       auto GEP = dyn_cast<GetElementPtrInst>(I);
@@ -120,8 +174,16 @@ struct ConstantFPEncryption : public FunctionPass {
 
           auto InsertPoint =
               PHI ? PHI->getIncomingBlock(i)->getTerminator() : I;
-          auto CipherConstant = encryptConstant(CFP, InsertPoint, RNG,
-                                                opt.level());
+          Value *CipherConstant;
+          auto CacheIt = DedupCache.find(CFP);
+          if (CacheIt != DedupCache.end()) {
+            IRBuilder<NoFolder> IRB(InsertPoint);
+            CipherConstant = IRB.CreateAlignedLoad(
+                CFP->getType(), CacheIt->second, Align{1}, true);
+          } else {
+            CipherConstant = encryptConstant(CFP, InsertPoint, RNG,
+                                             opt.level());
+          }
           if (PHI)
             PHI->setIncomingValue(i, CipherConstant);
           else
