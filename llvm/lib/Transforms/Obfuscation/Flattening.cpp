@@ -18,6 +18,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Transforms/Obfuscation/ObfuscationOptions.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 
 #include <memory>
@@ -123,18 +124,12 @@ bool Flattening::flatten(Function *f) {
 
   // Get a pointer on the first BB
   auto insertBlock = &*(f->begin());
-  auto splitPos = --(insertBlock->end());
-  if (insertBlock->size() > 1) {
-    --splitPos;
-  }
+  auto splitPos = insertBlock->getFirstNonPHIOrDbgOrAlloca();
 
   std::shuffle(origBB.begin(), origBB.end(), RNG);
 
   auto bbEndOfEntry = insertBlock->splitBasicBlock(splitPos, "first");
   origBB.insert(origBB.begin(), bbEndOfEntry);
-
-  // Remove jump
-  insertBlock->getTerminator()->eraseFromParent();
 
   DenseSet<uint64_t>                    UsedCases;
   DenseMap<BasicBlock *, ConstantInt *> CaseVal;
@@ -193,12 +188,11 @@ bool Flattening::flatten(Function *f) {
   BranchInst::Create(bbLoopEnd, swDefault);
 
   // Create switch instruction itself and set condition
-  auto switchI = SwitchInst::Create(&*f->begin(), swDefault, 0, bbLoopEntry);
-  switchI->setCondition(switchCondition);
+  auto switchI = SwitchInst::Create(switchCondition, swDefault, 0, bbLoopEntry);
 
   // Remove branch jump from 1st BB and make a jump to the while
-  f->begin()->getTerminator()->eraseFromParent();
-  BranchInst::Create(bbLoopEntry, &*f->begin());
+  ReplaceInstWithInst(f->begin()->getTerminator(),
+                      BranchInst::Create(bbLoopEntry));
 
   // Put all BB in the switch (case 值使用纯随机表)
   for (auto bi = origBB.begin(); bi != origBB.end(); ++bi) {
@@ -249,7 +243,8 @@ bool Flattening::flatten(Function *f) {
     }
 
     // If it's a conditional jump
-    if (bb->getTerminator()->getNumSuccessors() == 2) {
+    if (bb->getTerminator()->getNumSuccessors() == 2 &&
+        isa<BranchInst>(bb->getTerminator())) {
       auto *br = cast<BranchInst>(bb->getTerminator());
 
       auto *succT = br->getSuccessor(0);
@@ -269,7 +264,6 @@ bool Flattening::flatten(Function *f) {
   }
 
   fixStack(f);
-  lower->runOnFunction(*f);
 
   return true;
 }
