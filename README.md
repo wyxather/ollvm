@@ -1,10 +1,25 @@
 <h1 align="center">Arkari Just ARKARI</h1>
 
-<h3 align="center">
-  <a href="https://discord.gg/f5nDYjsrKZ">
-    <img src="https://img.shields.io/badge/Discord-加入群组-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入Discord群组" />
-  </a>
-</h3>
+<table align="center">
+  <tr>
+    <td align="center">
+      <a href="https://qm.qq.com/q/ZBra3aCswY">
+        <img src="./assets/qrcode_1775907901061.jpg" alt="Arkari 动漫角色交流群二维码" width="160" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://discord.gg/f5nDYjsrKZ">
+        <img src="https://img.shields.io/badge/Discord-加入群组-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入Discord群组" />
+      </a>
+      <br />
+      <a href="https://qm.qq.com/q/ZBra3aCswY">
+        <img src="https://img.shields.io/badge/QQ%E7%BE%A4-795322920-12B7F5?style=for-the-badge&logo=tencentqq&logoColor=white" alt="加入QQ群聊" />
+      </a>
+      <br />
+      <sub>QQ群：795322920</sub>
+    </td>
+  </tr>
+</table>
 
 <p align="center">
  <a href="https://github.com/KomiMoe/Arkari/issues">

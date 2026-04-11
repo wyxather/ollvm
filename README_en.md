@@ -1,10 +1,25 @@
 <h1 align="center">Arkari Just ARKARI</h1>
 
-<h3 align="center">
-  <a href="https://discord.gg/f5nDYjsrKZ">
-    <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord Community" />
-  </a>
-</h3>
+<table align="center">
+  <tr>
+    <td align="center">
+      <a href="https://qm.qq.com/q/ZBra3aCswY">
+        <img src="./assets/qrcode_1775907901061.jpg" alt="Arkari Anime Character Group QR" width="160" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://discord.gg/f5nDYjsrKZ">
+        <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord Community" />
+      </a>
+      <br />
+      <a href="https://qm.qq.com/q/ZBra3aCswY">
+        <img src="https://img.shields.io/badge/QQ%20Group-795322920-12B7F5?style=for-the-badge&logo=tencentqq&logoColor=white" alt="Join QQ Group" />
+      </a>
+      <br />
+      <sub>QQ Group: 795322920</sub>
+    </td>
+  </tr>
+</table>
 
 <p align="center">
  <a href="https://github.com/komimoe/Arkari/issues">
